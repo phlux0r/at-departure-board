@@ -25,8 +25,8 @@ Skip to step 7 and flash `esp32_demo`.
 
 | Part | Notes |
 |---|---|
-| **ESP32 DevKit (WROOM-32)** | Any standard dev board with a USB port. The unit here is an ESP32-D0WD-V3 — dual core, 4 MB flash, **no PSRAM needed**, CH340 USB-serial. An **ESP32-S3 SuperMini** is also supported — build `esp32s3` instead of `esp32`, and wire it per [hardware-notes.md](hardware-notes.md#esp32-s3-supermini--a-second-target-not-yet-verified-on-hardware). That target builds but has not been flashed yet |
-| **2.8" 320x240 SPI TFT** | [The panel used here](https://www.aliexpress.com/item/1005004557916570.html). The common red "2.8 TFT 240xRGBx320 V1.1" module with an SD slot and an unpopulated touch footprint. Touch is not used. Listings say ILI9341; the one received was an **ST7789**, and the firmware is configured for ST7789 — see [the display note](#the-panel-is-probably-an-st7789) below |
+| **ESP32 DevKit (WROOM-32)** | Any standard dev board with a USB port. The unit here is an ESP32-D0WD-V3 — dual core, 4 MB flash, **no PSRAM needed**, CH340 USB-serial. An **ESP32-S3 SuperMini** is also supported, with touch — build `esp32s3` instead of `esp32` and wire it per [hardware-notes.md](hardware-notes.md#esp32-s3-supermini--a-second-target-confirmed-on-hardware-2026-09-21) |
+| **2.8" 320x240 SPI TFT** | [The panel used here](https://www.aliexpress.com/item/1005004557916570.html). The common red "2.8 TFT 240xRGBx320 V1.1" module with an SD slot. On the classic ESP32 build the touch footprint is left unpopulated and unused; on the S3 build touch is wired and used for the on-screen reorder UI. Listings say ILI9341; the classic build's unit turned out to be an **ST7789**, and the S3 build's unit turned out to be a genuine **ILI9341** — different sourcing runs are different chips, and the firmware is configured per-env accordingly — see [the display note](#the-panel-is-probably-an-st7789) below |
 | **9 jumper wires** | Female-to-female if both sides have pins. Or solder direct, which is what fits a case best |
 | **USB cable** | Data, not charge-only. This trips more people up than anything else on this list |
 | **Printed case** (optional) | Designed for this build and in this repo — `models/build/wedge_body.stl` and `wedge_cover.stl`, ~60 g of filament. See the next section |
@@ -104,6 +104,29 @@ If you want different pins, they are build flags in `platformio.ini`
 length to buy, how the panel is retained, and what (if anything) needs soldering:
 [assembly.md](assembly.md).
 
+### ESP32-S3 SuperMini instead
+
+If you're building the `esp32s3` env, wire the panel (plus touch, which the
+S3 build uses) to these pins instead — all on the SuperMini's edge header:
+
+| Display / touch pin | S3 pin |
+|---|---|
+| VCC | 3V3 |
+| GND | GND |
+| CS | GPIO10 |
+| RESET | GPIO8 |
+| DC / RS | GPIO9 |
+| SDI / MOSI | GPIO11 |
+| SCK | GPIO12 |
+| **LED** | **GPIO7** |
+| SDO / MISO | GPIO13 |
+| T_CS (touch) | GPIO6 |
+| T_IRQ (touch) | GPIO5 — wired, but polling works without it |
+
+Touch shares SCK/MOSI/MISO with the display, over the same SPI bus. Full
+rationale for these specific pins — which strapping and native-USB pins they
+avoid — is in [hardware-notes.md](hardware-notes.md#wiring).
+
 ## 4. Install the toolchain
 
 You need Python 3.9+ and [PlatformIO](https://platformio.org/install/cli). The
@@ -160,8 +183,8 @@ unedited copy is enough for `esp32_demo`.
 
 ## 7. Flash the board
 
-**Auto-reset into the bootloader does not work on these boards.** You put the
-chip into download mode by hand, first, every time:
+**Auto-reset into the bootloader does not work on the classic ESP32.** You put
+the chip into download mode by hand, first, every time:
 
 > Hold **BOOT**. Press and release **EN**. Release **BOOT**.
 
@@ -186,6 +209,25 @@ flash. The firmware starts on its own once the upload finishes.
 
 If this becomes tiresome, a 1 µF capacitor between EN and GND restores normal
 auto-reset.
+
+### ESP32-S3 SuperMini instead
+
+The BOOT/EN dance above is specific to the classic board's CH340 chip and its
+broken auto-reset. The S3 talks to the host over native USB and auto-reset
+just works, so upload it the ordinary way:
+
+```bash
+pio run -e esp32s3 -t upload        # the live board
+pio run -e esp32s3_demo -t upload   # every board state, played in real time
+```
+
+If auto-reset ever does fail on a SuperMini, hold **BOOT** while tapping
+**RESET** instead.
+
+On first boot, the panel will show an interactive calibration prompt — touch
+each corner as it asks. That's touch calibration, not a hang; it only happens
+once, and the result is stored in NVS. Redo it any time by typing `c` + Enter
+in the serial monitor, without a reboot or losing your stops.
 
 ## 8. First boot
 
@@ -263,6 +305,15 @@ changing networks means editing `src/secrets.h` and re-flashing (step 7). The
 stops and theme survive a re-flash — they live in NVS, not in the firmware
 image.
 
+### Reordering lanes by touch (ESP32-S3 build only)
+
+Tap the small chevron in the status bar to reveal up/down chevrons at each
+lane's bottom-right corner, then tap one to swap that lane with its
+neighbour. It applies immediately and is remembered across reboots — no
+"save and restart" needed, since it only changes which lane a stop is drawn
+in, not the stop itself. Reorder mode closes on its own after about 15
+seconds of no taps.
+
 ## 10. Troubleshooting
 
 | Symptom | Cause |
@@ -272,13 +323,16 @@ image.
 | `No more data to read from the serial port` | Upload speed too high for a CH340 link. The repo already pins 115200; don't raise it |
 | No port found at all | Missing USB-serial driver (CH340 or CP2102 depending on your board), or a charge-only cable |
 | `wifi: FAILED status 1` repeatedly | Wrong SSID or password in `src/secrets.h`, or a 5 GHz-only network |
-| Screen stays black, board otherwise fine | Backlight not on GPIO32, or wrong driver — try `-DILI9341_DRIVER=1` |
+| Screen stays black, board otherwise fine | Backlight pin wrong (GPIO32 classic, GPIO7 S3), or wrong driver — try `-DILI9341_DRIVER=1` (classic) or `-DST7789_DRIVER=1` (S3) |
+| Screen shows solid white, board otherwise fine (S3) | Wrong driver for your panel - the S3 build's unit turned out to be an ILI9341, the classic build's an ST7789; different sourcing runs are different chips |
 | Colours inverted or mirrored | Wrong driver for your panel, as above. `-DTFT_INVERSION_OFF=1` and `-DTFT_RGB_ORDER=TFT_BGR` are the other two knobs |
 | Lanes empty, serial shows `HTTP 401` or `403` | API key wrong, or not subscribed to both GTFS **and** Realtime |
 | Times show but never a live delay | Key isn't subscribed to the Realtime product |
 | A lane says **check config** | That watch's direction couldn't be derived — check its Toward stop is really further along the route in the direction you travel |
 | A lane says **none tonight** | Correct and working: nothing more is scheduled today |
 | Times drift then say **stale** | The board lost the network or the clock. It retries on its own; the dimmed panel is it telling you the numbers are old |
+| Touch taps register (serial log shows them) but nothing happens on screen (S3) | Chevrons are small - try tapping their centre. If it's consistently off by a lot in one direction, recalibrate: type `c` + Enter in the serial monitor |
+| Touch seems to miss near a screen edge (S3) | Calibration accuracy, not a hardware limit - recalibrate (`c` + Enter) touching the corner targets as precisely as you can; see [hardware-notes.md](hardware-notes.md#touch) |
 
 Still stuck? Open an issue with the serial log from boot — it says a lot.
 
@@ -286,7 +340,7 @@ Still stuck? Open an issue with the serial log from boot — it says a lot.
 
 - [../README.md](../README.md) — what the board is and how the repo is laid out.
 - [hardware-notes.md](hardware-notes.md) — measured heap, the flashing dance,
-  the ST7789 discovery.
+  the ST7789 discovery, and the ESP32-S3 SuperMini + touch build.
 - [at-api-notes.md](at-api-notes.md) — how AT's API actually behaves. Read this
   before touching the network code.
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — running the tests, the golden

@@ -16,6 +16,10 @@ departures and realtime delays over WiFi/TLS, draws the board from them at
 `DEMO_MODE` (synthetic departures, no network) still builds and is useful for a
 no-key bring-up.
 
+Also runs on an **ESP32-S3 SuperMini**, whose panel has a working touch
+overlay: tap a status-bar chevron to reveal up/down chevrons on each lane and
+reorder them, live, no reboot. See [docs/hardware-notes.md](docs/hardware-notes.md#esp32-s3-supermini--a-second-target-confirmed-on-hardware-2026-09-21).
+
 ![The board in two themes](docs/theme-preview.png)
 
 ## Try it without hardware
@@ -44,8 +48,8 @@ short version:
 
 | Part | What to get |
 |---|---|
-| Board | Any standard **ESP32 DevKit (WROOM-32)**. The unit here is an ESP32-D0WD-V3: 4 MB flash, no PSRAM, CH340 USB-serial |
-| Display | 2.8" 320x240 SPI panel, no touch needed — [the one used here](https://www.aliexpress.com/item/1005004557916570.html). Sold as ILI9341; the unit received was an **ST7789**, which the build flags already handle ([why](docs/hardware-notes.md)) |
+| Board | Any standard **ESP32 DevKit (WROOM-32)**. The unit here is an ESP32-D0WD-V3: 4 MB flash, no PSRAM, CH340 USB-serial. An **ESP32-S3 SuperMini** works too (`esp32s3` env), with touch |
+| Display | 2.8" 320x240 SPI panel — [the one used here](https://www.aliexpress.com/item/1005004557916570.html). Sold as ILI9341; the classic build's unit turned out to be an **ST7789**, the S3 build's a genuine **ILI9341** — different sourcing runs are different chips, and the build flags handle each per-env ([why](docs/hardware-notes.md)) |
 | Case | Printed from `models/src/wedge.scad` in this repo — a raked wedge with a snap-on back. Dimensions for both boards in [docs/enclosure.md](docs/enclosure.md), assembly in [docs/assembly.md](docs/assembly.md) |
 | Wiring | Nine jumper wires, or solder direct — table below |
 
@@ -58,6 +62,9 @@ pio test -e native                       # firmware logic, on your PC (needs a C
 cp src/secrets.example.h src/secrets.h   # then fill in WiFi + AT key
 pio run -e esp32 -t upload               # the live board
 pio run -e esp32_demo -t upload          # the demo: no WiFi, no API key
+
+pio run -e esp32s3 -t upload             # ESP32-S3 SuperMini instead, with touch
+pio run -e esp32s3_demo -t upload
 ```
 
 Before each upload: hold BOOT, tap EN, release BOOT. Auto-reset into the
@@ -171,6 +178,30 @@ ILI9341 — see `docs/hardware-notes.md`).
 Drive the backlight from GPIO32 rather than 3V3: there it is PWM-able, which is
 what lets the panel dim rather than only switch off.
 
+### ESP32-S3 SuperMini instead
+
+ESP32-S3 SuperMini and a 2.8" 320x240 ILI9341 SPI panel with touch (`esp32s3`
+env — different pins, different panel controller and driver, see
+`docs/hardware-notes.md`).
+
+| Display / touch | S3 |
+|---|---|
+| VCC | 3V3 |
+| GND | GND |
+| CS | GPIO10 |
+| RESET | GPIO8 |
+| DC / RS | GPIO9 |
+| SDI / MOSI | GPIO11 |
+| SCK | GPIO12 |
+| LED | GPIO7 |
+| SDO / MISO | GPIO13 |
+| T_CS (touch) | GPIO6 |
+| T_IRQ (touch) | GPIO5 |
+
+Touch shares SCK/MOSI/MISO with the display over the same SPI bus. Tap the
+status-bar chevron to reorder lanes — see
+[docs/SETUP.md](docs/SETUP.md#reordering-lanes-by-touch-esp32-s3-build-only).
+
 ## Documentation
 
 - [docs/SETUP.md](docs/SETUP.md) — build one from parts, start to finish.
@@ -179,7 +210,7 @@ what lets the panel dim rather than only switch off.
   network code**; it differs from AT's own documentation in five places,
   including one that would make the board re-resolve every stop every night.
 - [docs/hardware-notes.md](docs/hardware-notes.md) — measured heap, the flashing
-  dance, and why the panel is an ST7789.
+  dance, why the panel is an ST7789, and the ESP32-S3 SuperMini + touch build.
 - [docs/enclosure.md](docs/enclosure.md) — every dimension of the case and the
   two boards, and where each number came from.
 - [docs/assembly.md](docs/assembly.md) — wiring and fitting it all into the

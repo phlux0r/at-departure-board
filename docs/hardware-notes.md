@@ -302,13 +302,14 @@ ran before WiFi association had completed. It succeeded once the code was
 changed to wait for association rather than just for `WiFi.begin()` to
 return.
 
-## ESP32-S3 SuperMini — a second target, not yet verified on hardware
+## ESP32-S3 SuperMini — a second target, confirmed on hardware 2026-09-21
 
 Everything above was measured on the classic ESP32. `platformio.ini` also
 carries an `esp32s3` / `esp32s3_demo` pair for an **ESP32-S3 SuperMini**
 (ESP32-S3FH4R2: 4 MB in-package flash, 2 MB in-package quad PSRAM, native
-USB). Nothing in this section has been run on hardware yet — it builds, and
-that is all that is claimed.
+USB, and — unlike the classic board — a populated resistive touch
+controller). Both live and demo builds run end to end: WiFi, AT data, the
+display, and touch.
 
 Why the S3 and not a C3: the classic build already sits at ~7 ms of frame-time
 headroom at 15 fps with the network task on the second core. The C3 is single
@@ -329,11 +330,11 @@ the in-package flash and PSRAM.
 | DC / RS | 9 | |
 | RESET | 8 | |
 | Backlight LED | 7 | LEDC PWM, as on the classic board |
-| Touch CS (T_CS) | 6 | Wired, but no firmware uses it yet |
-| Touch IRQ (T_IRQ) | 5 | Optional; polling works without it |
+| Touch CS (T_CS) | 6 | |
+| Touch IRQ (T_IRQ) | 5 | Wired but unused; polling works fine at 15 fps |
 | VCC / GND | 3V3 / GND | |
 
-The display pins, and now the backlight pin too, are build flags rather than
+The display pins, and the backlight pin too, are build flags rather than
 constants in `src/` — `src/backlight.cpp` takes `BACKLIGHT_PIN` and falls back
 to 32, the classic wiring, when nothing defines it. There are no other
 hard-coded GPIOs in the firmware.
@@ -357,114 +358,114 @@ hard-coded GPIOs in the firmware.
 - **No `before_reset = no_reset`, no 115200 upload speed.** Those exist for the
   classic board's CH340 and its broken auto-reset. Neither applies here. If
   auto-reset ever does fail on a SuperMini, hold BOOT while tapping RESET.
+- **`-DTOUCH_CS=6` and `-DSPI_TOUCH_FREQUENCY=2500000`** enable TFT_eSPI's
+  built-in XPT2046 support over the display's own SPI bus.
 
 `platform = espressif32@7.1.3` pins **Arduino core 2.0.17**, which is why
 `backlight.cpp` can keep using `ledcSetup()` / `ledcAttachPin()`: core 3.x
 removed them. Anything that bumps the platform has to revisit that file.
 
-### Confirmed on hardware, 2026-09-21
+### Chip and PSRAM
 
-- The vendor listing's C3/RISC-V description was wrong. `esptool.py flash_id`
-  on the actual board reports `ESP32-S3 (QFN56) rev v0.2`, `Embedded Flash 4MB
-  (XMC)`, `Embedded PSRAM 2MB (AP_3v3)` — exactly the SuperMini's advertised
-  ESP32-S3FH4R2, and exactly what `board_upload.flash_size` and
-  `board_build.arduino.memory_type = qio_qspi` assume.
-- `esp32s3_demo` as first pushed panicked immediately on boot — Guru
-  Meditation, `StoreProhibited`, backtrace in
-  `TFT_eSPI::begin_tft_write() → writecommand() → init() → setup()`. Without
-  `USE_HSPI_PORT` (or `USE_FSPI_PORT`), TFT_eSPI's ESP32-S3 driver
-  (`Processors/TFT_eSPI_ESP32_S3.c`) defaults to a *reference* to the Arduino
-  core's global `SPI` object (`SPIClass& spi = SPI;`) instead of constructing
-  its own. Whether that reference is safe to use depends on C++
-  static-initialization order across separately-compiled translation units,
-  and on Arduino core 2.0.17 (what `espressif32@7.1.3` ships) it is not: the
-  board crashes the instant the first SPI transaction runs, even though the
-  build itself succeeds. Documented for this exact library-and-core
-  combination in [Bodmer/TFT_eSPI#3329](https://github.com/Bodmer/TFT_eSPI/issues/3329)
-  and [espressif/arduino-esp32#9618](https://github.com/espressif/arduino-esp32/issues/9618).
-  Fix: `-DUSE_HSPI_PORT`, which is now in the `esp32s3` build flags — it makes
-  TFT_eSPI construct its own `SPIClass` instead of touching the shared global.
-  (Checked separately: on this driver, the Arduino-ESP32 SPI layer always
-  routes through the GPIO matrix regardless of which host you pick, so
-  choosing `HSPI` over `FSPI` costs nothing electrically - it's purely the
-  fix for the static-init crash above.)
-- With the panic fixed, the panel came up **solid white** - no crash, demo
-  scenes cycling normally in the serial log, just no image. This unit's
-  panel is a genuine **ILI9341**, not the ST7789 the classic reference build
-  has: swapping `-DST7789_DRIVER=1` for `-DILI9341_DRIVER=1` (now in the
-  `esp32s3` build flags) fixed it outright - correct colours and geometry,
-  no further `TFT_RGB_ORDER` or `TFT_INVERSION_OFF` changes needed. Confirms
-  the note above this section: the controller can't be detected in
-  software, and different sourcing runs are different chips. A blank white
-  screen with no crash is now the recognised symptom of "wrong driver
-  entirely" and is worth adding to the symptom table if it recurs.
-- The band renderer stays in internal RAM. PSRAM is slower, and the bands
-  already hit 15 fps — do not move them without re-measuring.
+`esptool.py flash_id` on the actual board reports `ESP32-S3 (QFN56) rev v0.2`,
+`Embedded Flash 4MB (XMC)`, `Embedded PSRAM 2MB (AP_3v3)` — exactly the
+SuperMini's advertised ESP32-S3FH4R2, and exactly what `board_upload.flash_size`
+and `board_build.arduino.memory_type = qio_qspi` assume. (The vendor listing's
+C3/RISC-V description, mentioned as a risk when this env was first added, was
+simply wrong.)
 
-### Still open
+### Two bugs found bringing the display up
 
-- Frame rate and heap headroom on the S3 with a real display attached
-  (the demo's serial counters look healthy - 15.2 fps, largest free block
-  over 2 MB - but that's with PSRAM idle and nothing reading real data yet).
-- Touch is wired into the firmware: `TOUCH_CS=6` and
-  `SPI_TOUCH_FREQUENCY=2500000` are in the `esp32s3` build flags, and
-  `src/touch.{h,cpp}` calibrates on first boot (`tft.calibrateTouch()`,
-  touch each corner as prompted) and stores the result in NVS under its own
-  `touch`/`cal` namespace - deliberately separate from `config.cpp`'s
-  `board`/`cfg`, since this is device-local and never round-trips through
-  the web setup page. **Confirmed on hardware** - taps register. An early
-  reading suggested resistive touch here fails within about 20px of every
-  screen edge (`getTouch()` rejects anything that maps outside `0..width` /
-  `0..height` instead of clamping it, so a tap beyond the calibrated range
-  is silently dropped) - that turned out to be a calibration-accuracy
-  problem more than an inherent panel limit; see "Calibration accuracy"
-  below. After recalibrating, touch reaches close to the true edges.
-- Touch UI: a status-bar chevron (`src/reorder_ui.{h,cpp}`) toggles reorder
-  mode, which reveals up/down chevrons at each lane's bottom-right corner;
-  tapping one swaps that lane with its neighbour. This only permutes a new
-  `config_lane_order()` (`src/config.cpp`) - it never touches
-  `config_watches()` or the fetch task's data, which is what makes it safe
-  to change live rather than needing the usual "save and reboot". Applied
-  live and persisted to NVS on every swap, same pattern as the theme.
-  First hardware pass found two bugs, both fixed:
-  - The toggle was invisible - drawn *before* the lane loop, so lane 0's
-    card (which starts at y=21, inside the toggle's own y:12-34) painted
-    over it every frame. `Ui::draw()` now draws the status bar and toggle
-    last, on top, not first.
-  - Chevron taps looked unresponsive despite the raw touch log showing
-    every tap registering. This panel's resistive touch is noisy enough at
-    the moment of contact that one physical tap can read down/up/down
-    across a couple of frames - each read a real edge, but read together as
-    two swaps that silently cancelled back out. `touch_debounce()`
-    (`src/touch.{h,cpp}`) now requires 2 consecutive down reads and a
-    300ms cooldown before it reports a confirmed press; the reorder UI
-    acts on that instead of the raw edge. The bring-up serial log still
-    prints every raw edge deliberately, flicker included.
-  Once recalibrating fixed the edge accuracy (below), the toggle moved back
-  into the status bar proper (was pushed below it) as a smaller side-by-side
-  up/down pair, and the lane chevrons moved into each lane's actual
-  bottom-right corner (were inset further, to clear the edges the bad
-  calibration couldn't reach).
-- Calibration accuracy: a reported touch can be off by tens of pixels from
-  where the panel was actually pressed - one observed case read
-  `(250, 16)` for a touch made well below that, a uniform-looking shift
-  rather than a rotation or axis swap. Most likely cause: `calibrateTouch()`
-  draws its corner targets right at the literal screen edges (pixel 0 and
-  width/height-1), which a fingertip can't hit precisely, so the derived
-  linear mapping carries that error into every touch afterward. Recalibrating
-  is now a fast loop instead of a full erase: type `c` + Enter in the serial
-  monitor (`touch_poll_recalibrate()`, `src/touch.{h,cpp}`) to redo it
-  without a reboot or losing stops/theme/lane order. Try touching the
-  corner targets as centred and deliberately as possible; a stylus may do
-  better than a fingertip here.
+1. **Boot panic** — Guru Meditation, `StoreProhibited`, backtrace in
+   `TFT_eSPI::begin_tft_write() → writecommand() → init() → setup()`. Without
+   `USE_HSPI_PORT` (or `USE_FSPI_PORT`), TFT_eSPI's ESP32-S3 driver
+   (`Processors/TFT_eSPI_ESP32_S3.c`) defaults to a *reference* to the Arduino
+   core's global `SPI` object (`SPIClass& spi = SPI;`) instead of constructing
+   its own. Whether that reference is safe to use depends on C++
+   static-initialization order across separately-compiled translation units,
+   and on Arduino core 2.0.17 (what `espressif32@7.1.3` ships) it is not: the
+   board crashed the instant the first SPI transaction ran, even though the
+   build itself succeeded. Documented for this exact library-and-core
+   combination in [Bodmer/TFT_eSPI#3329](https://github.com/Bodmer/TFT_eSPI/issues/3329)
+   and [espressif/arduino-esp32#9618](https://github.com/espressif/arduino-esp32/issues/9618).
+   Fix: `-DUSE_HSPI_PORT`, now in the `esp32s3` build flags — it makes
+   TFT_eSPI construct its own `SPIClass` instead of touching the shared
+   global. (Checked separately: on this driver, the Arduino-ESP32 SPI layer
+   always routes through the GPIO matrix regardless of which host you pick,
+   so choosing `HSPI` over `FSPI` costs nothing electrically — it's purely
+   the fix for the static-init crash.)
+2. **Wrong driver** — with the panic fixed, the panel came up solid white: no
+   crash, demo scenes cycling normally in the serial log, just no image. This
+   unit's panel is a genuine **ILI9341**, not the ST7789 the classic reference
+   build has: swapping `-DST7789_DRIVER=1` for `-DILI9341_DRIVER=1` (now in
+   the `esp32s3` build flags) fixed it outright — correct colours and
+   geometry, no further `TFT_RGB_ORDER` or `TFT_INVERSION_OFF` changes
+   needed. Confirms the note above ("The display is an ST7789, not an
+   ILI9341"): the controller can't be detected in software, and different
+   sourcing runs are different chips. A blank white screen with no crash is
+   the recognised symptom of "wrong driver entirely", distinct from the
+   inverted/swapped-colour symptoms in that section's table.
+
+The band renderer stays in internal RAM on the S3 too. PSRAM is slower, and
+the bands already hit 15 fps — do not move them without re-measuring.
+
+### Touch
+
+`src/touch.{h,cpp}` calibrates on first boot (`tft.calibrateTouch()` — touch
+each corner as prompted) and stores the result in NVS under its own
+`touch`/`cal` namespace, deliberately separate from `config.cpp`'s
+`board`/`cfg`: this is device-local and never round-trips through the web
+setup page.
+
+Two things worth knowing before touching this code:
+
+- **Raw reads are noisy at the moment of contact.** A single physical tap can
+  read down/up/down across a couple of frames rather than staying cleanly
+  down — each read a genuine edge, but taken together, enough to fire (and
+  silently cancel out) more than one UI action per tap. Anything that acts on
+  a touch should go through `touch_debounce()`, not a raw `touch_read()`
+  edge: it requires 2 consecutive down reads and a 300ms cooldown before
+  reporting a confirmed press. The bring-up serial log deliberately keeps
+  printing every raw edge instead — seeing that flicker is the point of it.
+- **Calibration accuracy, not a hard dead zone.** An inaccurate first
+  calibration made touch appear to fail within ~20px of every screen edge
+  (`getTouch()` rejects anything that maps outside `0..width` / `0..height`
+  rather than clamping it, so a tap beyond the calibrated range is silently
+  dropped). `calibrateTouch()` draws its corner targets right at the literal
+  screen edges, which a fingertip can't hit precisely, so an imprecise
+  calibration carries that error into every touch afterward. Recalibrating
+  fixed it — touch now reaches close to the true edges. Type `c` + Enter in
+  the serial monitor (`touch_poll_recalibrate()`) to redo calibration without
+  a reboot or losing stops/theme/lane order; touch the corner targets as
+  centred and deliberately as possible, a stylus may do better than a
+  fingertip.
+
+### Touch UI: reorder lanes
+
+A status-bar chevron (`src/reorder_ui.{h,cpp}`) toggles reorder mode, which
+reveals up/down chevrons at each lane's bottom-right corner; tapping one swaps
+that lane with its neighbour. This only permutes a new `config_lane_order()`
+(`src/config.cpp`) — it never touches `config_watches()` or the fetch task's
+data, which is what makes it safe to change live rather than needing the
+usual "save and reboot" the web setup page uses. Applied live and persisted
+to NVS on every swap, the same pattern `config.cpp` already used for the
+theme.
+
+Chevron and toggle positions sit at their natural spots — toggle inside the
+status bar, chevrons in each lane's actual bottom-right corner — now that
+recalibrating fixed the touch accuracy problem above; an earlier pass had
+them inset further out, to clear edges an inaccurate calibration couldn't
+reach.
 
 ## Still to verify on hardware
 
-- PWM dimming driven by the app (the LEDC path itself is verified).
-- `esp32s3` / `esp32s3_demo`: boots, doesn't panic, and the display renders
-  correctly. Not yet checked: live data path (`esp32` build, secrets, WiFi),
-  and frame rate / heap under a real fetch rather than the demo scenes. See
-  "Confirmed on hardware" above.
+- PWM dimming driven by the app (the LEDC path itself is verified, on both
+  boards - `backlight_set()` is only ever called with 255, never anything
+  that would actually dim it).
+- Exact frame rate and heap headroom on the S3 under a real, sustained live
+  fetch - confirmed working end to end, but not measured against the
+  classic board's numbers the way "Memory" and "Display performance" above
+  do.
 - The WiFi-outage path: pull WiFi, expect `stale Nm` with the last good data
   kept, the lanes dimmed and the vehicles still animating, then recovery without a reboot when
   WiFi returns. This has **not** been performed on hardware. The code paths
