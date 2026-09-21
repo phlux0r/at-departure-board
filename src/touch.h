@@ -34,3 +34,10 @@ bool touch_read(TFT_eSPI& tft, uint16_t* x, uint16_t* y);
 // every raw edge instead of this, since seeing that flicker is the point.
 bool touch_debounce(bool down, uint16_t x, uint16_t y, uint32_t now_ms, uint16_t* out_x,
                      uint16_t* out_y);
+
+// Call once per loop() iteration. Type 'c' + Enter in the serial monitor to
+// erase the stored calibration and run the interactive corner-touch routine
+// again - useful for redoing a calibration that came out inaccurate, without
+// a reboot or an erase that would also wipe stops/theme/lane order. Blocks
+// only while a recalibration is actually in progress.
+void touch_poll_recalibrate(TFT_eSPI& tft);

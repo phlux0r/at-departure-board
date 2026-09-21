@@ -442,6 +442,18 @@ removed them. Anything that bumps the platform has to revisit that file.
     prints every raw edge deliberately, flicker included.
   Chevron positions themselves are still a first pass Robert expects to
   tweak once they're seen and tapped on the actual panel.
+- Calibration accuracy: a reported touch can be off by tens of pixels from
+  where the panel was actually pressed - one observed case read
+  `(250, 16)` for a touch made well below that, a uniform-looking shift
+  rather than a rotation or axis swap. Most likely cause: `calibrateTouch()`
+  draws its corner targets right at the literal screen edges (pixel 0 and
+  width/height-1), which a fingertip can't hit precisely, so the derived
+  linear mapping carries that error into every touch afterward. Recalibrating
+  is now a fast loop instead of a full erase: type `c` + Enter in the serial
+  monitor (`touch_poll_recalibrate()`, `src/touch.{h,cpp}`) to redo it
+  without a reboot or losing stops/theme/lane order. Try touching the
+  corner targets as centred and deliberately as possible; a stylus may do
+  better than a fingertip here.
 
 ## Still to verify on hardware
 

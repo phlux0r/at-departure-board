@@ -167,6 +167,10 @@ void loop() {
   // countdown is drawn from the bad clock.
   const int64_t now = time(nullptr);
 
+  // Type 'c' + Enter in the serial monitor to redo touch calibration - see
+  // touch.h. Checked every frame, but only blocks while actually running.
+  touch_poll_recalibrate(tft);
+
   // One touch read per frame. The raw down/up edges go straight to the
   // bring-up log below - every transition, flicker included, since seeing
   // that flicker is the point. The reorder UI acts on touch_debounce()'s

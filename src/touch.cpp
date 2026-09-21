@@ -11,6 +11,26 @@ namespace {
 // calibration, never round-tripped through the web setup page's JSON.
 constexpr char NVS_NS[] = "touch";
 constexpr char NVS_KEY[] = "cal";
+
+// Blocks on tft.calibrateTouch()'s own on-screen prompts, then loads and
+// stores the result. Shared by the first-boot path and touch_poll_recalibrate().
+void run_calibration(TFT_eSPI& tft) {
+  uint16_t cal[5];
+  Serial.println("touch: touch each corner as prompted");
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextFont(2);
+  tft.setCursor(20, 0);
+  tft.calibrateTouch(cal, TFT_MAGENTA, TFT_BLACK, 15);
+  tft.setTouch(cal);
+
+  Preferences prefs;
+  if (prefs.begin(NVS_NS, false)) {  // read-write
+    prefs.putBytes(NVS_KEY, cal, sizeof cal);
+    prefs.end();
+  }
+  Serial.println("touch: calibration saved to nvs");
+}
 }  // namespace
 
 void touch_begin(TFT_eSPI& tft) {
@@ -31,26 +51,24 @@ void touch_begin(TFT_eSPI& tft) {
     return;
   }
 
-  Serial.println("touch: no stored calibration - touch each corner as prompted");
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextFont(2);
-  tft.setCursor(20, 0);
-  tft.calibrateTouch(cal, TFT_MAGENTA, TFT_BLACK, 15);
-
-  if (prefs.begin(NVS_NS, false)) {  // read-write
-    prefs.putBytes(NVS_KEY, cal, sizeof cal);
-    prefs.end();
-  }
-  Serial.println("touch: calibration saved to nvs");
+  Serial.println("touch: no stored calibration");
+  run_calibration(tft);
 }
 
 bool touch_read(TFT_eSPI& tft, uint16_t* x, uint16_t* y) { return tft.getTouch(x, y); }
+
+void touch_poll_recalibrate(TFT_eSPI& tft) {
+  if (!Serial.available()) return;
+  const int c = Serial.read();
+  while (Serial.available()) Serial.read();  // drain the rest of the line
+  if (c == 'c' || c == 'C') run_calibration(tft);
+}
 
 #else  // !TOUCH_CS - no touch controller on this board
 
 void touch_begin(TFT_eSPI&) {}
 bool touch_read(TFT_eSPI&, uint16_t*, uint16_t*) { return false; }
+void touch_poll_recalibrate(TFT_eSPI&) {}
 
 #endif
 
