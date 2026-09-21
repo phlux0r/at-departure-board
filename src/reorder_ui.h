@@ -13,11 +13,11 @@
 // chevron-rect functions below, which double as both hit zones and draw
 // rects so the two can never drift apart.
 //
-// Geometry note: this panel's resistive touch measurably fails to register
-// within about 20px of every screen edge (docs/hardware-notes.md, touch
-// bring-up). Every rect below is placed with that margin in mind - the
-// toggle in particular sits just below the 18px status bar rather than
-// inside it, since the status bar itself is entirely within that margin.
+// Geometry note: an early, inaccurate touch calibration made this panel
+// measurably fail to register near every screen edge; recalibrating fixed
+// it (docs/hardware-notes.md), so the rects below sit close to where they
+// visually belong (toggle in the status bar, chevrons in each lane's actual
+// bottom-right corner) rather than inset away from the edges.
 
 void reorder_ui_begin();  // loads config_lane_order() as the working copy
 

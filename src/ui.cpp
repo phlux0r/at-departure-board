@@ -46,14 +46,14 @@ void status_bar(Painter& p, const Board& b, const Theme& th) {
   p.ellipse(dx - 3, mid - 3, dx + 3, mid + 3, dot);
 }
 
-// A small up/down chevron pair - always visible, toggles reorder mode. See
-// reorder_ui.h for why it sits just below the status bar rather than in it.
+// A small up/down chevron pair, side by side - always visible, toggles
+// reorder mode.
 void reorder_toggle_icon(Painter& p, const Theme& th) {
   const Rect r = reorder_toggle_rect();
-  const int cx = (r.x0 + r.x1) / 2;
+  const int mid = (r.x0 + r.x1) / 2;
   const Rgb colour = reorder_ui_active() ? th.colours[C_LIVE] : th.colours[C_DIM];
-  p.triangle(r.x0 + 2, r.y0 + 6, r.x1 - 2, r.y0 + 6, cx, r.y0, colour);
-  p.triangle(r.x0 + 2, r.y1 - 6, r.x1 - 2, r.y1 - 6, cx, r.y1, colour);
+  p.triangle(r.x0, r.y1, mid - 1, r.y1, (r.x0 + mid - 1) / 2, r.y0, colour);      // up, left
+  p.triangle(mid + 1, r.y0, r.x1, r.y0, (mid + 1 + r.x1) / 2, r.y1, colour);      // down, right
 }
 
 // One chevron, filled if it exists at this slot (top has no up, bottom no
@@ -241,6 +241,14 @@ void Ui::draw(const Board& b, uint32_t ms, bool touch_down_edge, int touch_x, in
   for (int oy = 0; oy < H; oy += BAND_H) {
     Painter p{band_, oy, b.dimmed};
     band_.fillSprite(p.c(th.colours[C_BG]));
+    // Status bar (and its toggle) before the lanes: it sits entirely within
+    // y:0-18, above where any lane's card starts (y0+3=21 at the nearest),
+    // so draw order between the two doesn't matter here - this is just the
+    // more natural header-first order.
+    if (oy <= STATUS_H) {
+      status_bar(p, b, th);
+      reorder_toggle_icon(p, th);
+    }
     for (int i = 0; i < n; i++) {
       const Lane ln = lane(i, n);
       if (ln.rect.y1 < oy || ln.rect.y0 >= oy + BAND_H) continue;  // not in this band
@@ -249,13 +257,6 @@ void Ui::draw(const Board& b, uint32_t ms, bool touch_down_edge, int touch_x, in
         reorder_lane_chevron_icon(p, i, n, true, th);
         reorder_lane_chevron_icon(p, i, n, false, th);
       }
-    }
-    // After the lanes, not before: the toggle sits in y:12-34 (reorder_ui.h),
-    // which overlaps lane 0's card (it starts at y0+3=21) - drawing it last
-    // is what keeps it on top rather than painted over.
-    if (oy <= STATUS_H) {
-      status_bar(p, b, th);
-      reorder_toggle_icon(p, th);
     }
     band_.pushSprite(0, oy);
   }

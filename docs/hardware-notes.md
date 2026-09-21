@@ -412,13 +412,13 @@ removed them. Anything that bumps the platform has to revisit that file.
   touch each corner as prompted) and stores the result in NVS under its own
   `touch`/`cal` namespace - deliberately separate from `config.cpp`'s
   `board`/`cfg`, since this is device-local and never round-trips through
-  the web setup page. **Confirmed on hardware** - taps register, but this
-  panel's resistive touch measurably fails to register within about 20px of
-  every screen edge (calibration touches the true corners, per the library
-  source, but `getTouch()` rejects anything that maps outside `0..width` /
-  `0..height` instead of clamping it, so a real tap beyond the calibrated
-  range is silently dropped). Every touch target added since keeps its
-  centre at least ~22px from all four edges for this reason.
+  the web setup page. **Confirmed on hardware** - taps register. An early
+  reading suggested resistive touch here fails within about 20px of every
+  screen edge (`getTouch()` rejects anything that maps outside `0..width` /
+  `0..height` instead of clamping it, so a tap beyond the calibrated range
+  is silently dropped) - that turned out to be a calibration-accuracy
+  problem more than an inherent panel limit; see "Calibration accuracy"
+  below. After recalibrating, touch reaches close to the true edges.
 - Touch UI: a status-bar chevron (`src/reorder_ui.{h,cpp}`) toggles reorder
   mode, which reveals up/down chevrons at each lane's bottom-right corner;
   tapping one swaps that lane with its neighbour. This only permutes a new
@@ -440,8 +440,11 @@ removed them. Anything that bumps the platform has to revisit that file.
     300ms cooldown before it reports a confirmed press; the reorder UI
     acts on that instead of the raw edge. The bring-up serial log still
     prints every raw edge deliberately, flicker included.
-  Chevron positions themselves are still a first pass Robert expects to
-  tweak once they're seen and tapped on the actual panel.
+  Once recalibrating fixed the edge accuracy (below), the toggle moved back
+  into the status bar proper (was pushed below it) as a smaller side-by-side
+  up/down pair, and the lane chevrons moved into each lane's actual
+  bottom-right corner (were inset further, to clear the edges the bad
+  calibration couldn't reach).
 - Calibration accuracy: a reported touch can be off by tens of pixels from
   where the panel was actually pressed - one observed case read
   `(250, 16)` for a touch made well below that, a uniform-looking shift

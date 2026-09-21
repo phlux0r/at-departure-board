@@ -24,10 +24,12 @@ bool rect_contains(Rect r, int x, int y) {
 void reorder_ui_begin() { memcpy(g_order, config_lane_order(), sizeof g_order); }
 
 Rect reorder_toggle_rect() {
-  // Centred in the gap between the location text and the live/stale label,
-  // well clear of the left and right edge dead zones either way. See
-  // reorder_ui.h for why this is below y=18, not inside the status bar.
-  return {236, 12, 268, 34};
+  // Inside the status bar, centred in the gap between the location text and
+  // the live/stale label. An earlier calibration was inaccurate enough that
+  // touch measurably missed the ~20px nearest every edge, which pushed this
+  // below the (18px-tall) status bar entirely - recalibrating fixed that
+  // (docs/hardware-notes.md), so it moved back in.
+  return {240, 3, 262, 15};
 }
 
 Rect reorder_lane_chevron(int slot, int n, bool up) {
@@ -38,15 +40,15 @@ Rect reorder_lane_chevron(int slot, int n, bool up) {
   Rect r{};
   if (!lane_rect(slot, n, &r)) return empty;
 
-  // The bottom lane needs its own extra margin - checked by slot, not by
-  // comparing r.y1 to H, since integer-division rounding can leave the last
-  // lane's rect a couple of rows short of the true screen edge (see
-  // test_lane_rects_split_the_space_below_the_status_bar). Every other
-  // lane's card bottom is already clear of the dead zone.
-  const int bottom = (slot == n - 1) ? H - 22 : r.y1;
-  const int x0 = W - MARKER_INSET + 20;
-  const int y0 = up ? bottom - 30 : bottom - 14;
-  return {x0, y0, x0 + 16, y0 + 12};
+  // The card's own bottom-right corner (MARGIN clears its rounded edge -
+  // see draw_lane) - no longer inset further for the touch panel's edge
+  // accuracy, which recalibrating fixed (docs/hardware-notes.md).
+  const int x1 = r.x1 - MARGIN - 2;
+  const int down_y1 = r.y1 - 3;
+  const int down_y0 = down_y1 - 12;
+  const int up_y1 = down_y0 - 2;
+  const int up_y0 = up_y1 - 12;
+  return up ? Rect{x1 - 14, up_y0, x1, up_y1} : Rect{x1 - 14, down_y0, x1, down_y1};
 }
 
 void reorder_ui_touch(bool down_edge, int x, int y, int n, uint32_t now_ms) {
