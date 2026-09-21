@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "backlight.h"
+#include "touch.h"
 #include "ui.h"
 
 #ifdef DEMO_MODE
@@ -74,6 +75,11 @@ void setup() {
     tft.fillScreen(TFT_RED);
     for (;;) delay(1000);
   }
+
+  // Bring-up only: no touch UI reads this yet (spec section 8a). A no-op on
+  // a board with no TOUCH_CS defined. Runs before BOOT-OK so a first-time
+  // calibration's on-screen prompts aren't mistaken for a hung boot.
+  touch_begin(tft);
 
 #ifdef DEMO_MODE
   Serial.println("BOOT-OK demo");
@@ -154,6 +160,20 @@ void loop() {
   // countdown is drawn from the bad clock.
   const int64_t now = time(nullptr);
   ui.draw(board_now(start, now), start);
+
+  // Bring-up only (see touch.h): print on every press/release edge, not
+  // every frame - a held finger would otherwise flood the log at 15 fps.
+  static bool touch_was_down = false;
+  uint16_t tx, ty;
+  const bool touch_down = touch_read(tft, &tx, &ty);
+  if (touch_down != touch_was_down) {
+    if (touch_down) {
+      Serial.printf("touch: down at %u,%u\n", tx, ty);
+    } else {
+      Serial.println("touch: up");
+    }
+    touch_was_down = touch_down;
+  }
 
   const uint32_t took = millis() - start;
   frames++;
