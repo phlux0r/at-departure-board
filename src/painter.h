@@ -33,6 +33,9 @@ struct Painter {
   void hline(int x0, int x1, int y, Rgb v) { s.drawFastHLine(x0, y - oy, x1 - x0 + 1, c(v)); }
   void vline(int x, int y0, int y1, Rgb v) { s.drawFastVLine(x, y0 - oy, y1 - y0 + 1, c(v)); }
   void point(int x, int y, Rgb v) { s.drawPixel(x, y - oy, c(v)); }
+  void triangle(int x0, int y0, int x1, int y1, int x2, int y2, Rgb v) {
+    s.fillTriangle(x0, y0 - oy, x1, y1 - oy, x2, y2 - oy, c(v));
+  }
 
   void font(Font f) {
     if (f.gfx != nullptr) s.setFreeFont(f.gfx);

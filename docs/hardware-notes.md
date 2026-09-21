@@ -406,17 +406,29 @@ removed them. Anything that bumps the platform has to revisit that file.
 - Frame rate and heap headroom on the S3 with a real display attached
   (the demo's serial counters look healthy - 15.2 fps, largest free block
   over 2 MB - but that's with PSRAM idle and nothing reading real data yet).
-- Touch is now wired into the firmware: `TOUCH_CS=6` and
+- Touch is wired into the firmware: `TOUCH_CS=6` and
   `SPI_TOUCH_FREQUENCY=2500000` are in the `esp32s3` build flags, and
   `src/touch.{h,cpp}` calibrates on first boot (`tft.calibrateTouch()`,
   touch each corner as prompted) and stores the result in NVS under its own
   `touch`/`cal` namespace - deliberately separate from `config.cpp`'s
   `board`/`cfg`, since this is device-local and never round-trips through
-  the web setup page. `loop()` prints a `touch: down at x,y` / `touch: up`
-  line on every press/release edge, throttled to edges rather than every
-  frame. **Not yet run on hardware** - resistive touch needs a firm press,
-  and whether the calibration prompts and reads are actually reliable on
-  this panel is unverified. No touch UI reads any of this yet; that's next.
+  the web setup page. **Confirmed on hardware** - taps register, but this
+  panel's resistive touch measurably fails to register within about 20px of
+  every screen edge (calibration touches the true corners, per the library
+  source, but `getTouch()` rejects anything that maps outside `0..width` /
+  `0..height` instead of clamping it, so a real tap beyond the calibrated
+  range is silently dropped). Every touch target added since keeps its
+  centre at least ~22px from all four edges for this reason.
+- Touch UI: a status-bar chevron (`src/reorder_ui.{h,cpp}`) toggles reorder
+  mode, which reveals up/down chevrons at each lane's bottom-right corner;
+  tapping one swaps that lane with its neighbour. This only permutes a new
+  `config_lane_order()` (`src/config.cpp`) - it never touches
+  `config_watches()` or the fetch task's data, which is what makes it safe
+  to change live rather than needing the usual "save and reboot". Applied
+  live and persisted to NVS on every swap, same pattern as the theme.
+  **Not yet run on hardware** - the chevron positions in particular (see
+  `reorder_lane_chevron()`) are a first pass Robert expects to tweak once
+  they're seen and tapped on the actual panel.
 
 ## Still to verify on hardware
 

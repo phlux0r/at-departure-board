@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "backlight.h"
+#include "reorder_ui.h"
 #include "touch.h"
 #include "ui.h"
 
@@ -132,6 +133,12 @@ void setup() {
 
   Serial.println("BOOT-OK live");
 #endif
+
+  // Placed after config_begin() (live branch, above), so a saved order
+  // loads. DEMO_MODE never calls config_begin() at all, so this just picks
+  // up config.cpp's compiled-in identity default there instead - reorder
+  // still works in the demo, it just never persists across boots.
+  reorder_ui_begin();
 }
 
 void loop() {
@@ -159,21 +166,23 @@ void loop() {
   // WatchState::Ok) continue;`) - the lanes just say "starting" and no
   // countdown is drawn from the bad clock.
   const int64_t now = time(nullptr);
-  ui.draw(board_now(start, now), start);
 
-  // Bring-up only (see touch.h): print on every press/release edge, not
-  // every frame - a held finger would otherwise flood the log at 15 fps.
+  // One touch read per frame, shared by the bring-up log below (down/up
+  // edges, printed on every transition - see touch.h) and the reorder UI
+  // (the press edge only - a held finger must not repeat a swap every
+  // frame at 15 fps).
   static bool touch_was_down = false;
-  uint16_t tx, ty;
-  const bool touch_down = touch_read(tft, &tx, &ty);
-  if (touch_down != touch_was_down) {
-    if (touch_down) {
-      Serial.printf("touch: down at %u,%u\n", tx, ty);
-    } else {
-      Serial.println("touch: up");
-    }
-    touch_was_down = touch_down;
+  uint16_t tx = 0, ty = 0;
+  const bool touch_is_down = touch_read(tft, &tx, &ty);
+  const bool touch_down_edge = touch_is_down && !touch_was_down;
+  if (touch_down_edge) {
+    Serial.printf("touch: down at %u,%u\n", tx, ty);
+  } else if (!touch_is_down && touch_was_down) {
+    Serial.println("touch: up");
   }
+  touch_was_down = touch_is_down;
+
+  ui.draw(board_now(start, now), start, touch_down_edge, tx, ty);
 
   const uint32_t took = millis() - start;
   frames++;

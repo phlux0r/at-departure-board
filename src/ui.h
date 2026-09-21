@@ -13,7 +13,11 @@ class Ui {
  public:
   explicit Ui(TFT_eSPI& tft);
   bool begin();  // false if the band sprite could not be allocated
-  void draw(const Board& board, uint32_t ms);
+
+  // touch_down_edge must be true only on the frame a press begins (main.cpp
+  // tracks this) - it's forwarded to the reorder UI (reorder_ui.h), which
+  // debounces its own taps from that edge rather than a held finger.
+  void draw(const Board& board, uint32_t ms, bool touch_down_edge, int touch_x, int touch_y);
 
  private:
   TFT_eSprite band_;

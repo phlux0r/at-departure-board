@@ -14,6 +14,8 @@ namespace {
 
 constexpr char NVS_NS[] = "board";
 constexpr char NVS_KEY[] = "cfg";
+constexpr char NVS_ORDER_KEY[] = "order";  // separate key: never round-tripped
+                                           // through cfg_parse/cfg_serialize
 
 Config g_cfg;
 WatchConfig g_pub[MAX_WATCHES];
@@ -23,7 +25,22 @@ uint8_t g_n_pub = 0;
 // which is the whole reason the theme may change without a reboot.
 volatile uint8_t g_theme = 0;
 
+// Display order, not config: see config.h. Touched only by reorder_ui.cpp,
+// at human tap speed, so a plain array (no atomics) is fine - nothing else
+// ever writes it, and ui.cpp only ever reads a fully-written result because
+// config_set_lane_order() finishes the copy before returning.
+uint8_t g_order[MAX_WATCHES] = {0, 1, 2, 3};
+
 Preferences g_prefs;
+
+bool is_valid_permutation(const uint8_t* order, uint8_t n) {
+  bool seen[MAX_WATCHES] = {};
+  for (uint8_t i = 0; i < n; i++) {
+    if (order[i] >= n || seen[order[i]]) return false;
+    seen[order[i]] = true;
+  }
+  return true;
+}
 
 void seed_from_compiled_defaults() {
   Config c{};
@@ -88,12 +105,42 @@ void config_begin() {
   Serial.printf("config: %s, %u watches, theme %u (%s)\n", g_cfg.location,
                 static_cast<unsigned>(g_n_pub), static_cast<unsigned>(g_theme),
                 loaded ? "nvs" : "compiled defaults");
+
+  // Order is loaded separately from - and after - the watches themselves,
+  // since it's only meaningful once g_n_pub is known: a stored order for a
+  // different watch count (e.g. after editing stops on the setup page) is
+  // stale and falls back to identity rather than silently misapplying.
+  bool order_loaded = false;
+  if (g_prefs.begin(NVS_NS, true)) {  // read-only
+    uint8_t stored[MAX_WATCHES];
+    if (g_prefs.getBytesLength(NVS_ORDER_KEY) == sizeof stored &&
+        g_prefs.getBytes(NVS_ORDER_KEY, stored, sizeof stored) == sizeof stored &&
+        is_valid_permutation(stored, g_n_pub)) {
+      memcpy(g_order, stored, sizeof g_order);
+      order_loaded = true;
+    }
+    g_prefs.end();
+  }
+  if (!order_loaded) {
+    for (uint8_t i = 0; i < MAX_WATCHES; i++) g_order[i] = i;
+  }
 }
 
 const WatchConfig* config_watches() { return g_pub; }
 uint8_t config_n_watches() { return g_n_pub; }
 const char* config_location() { return g_cfg.location; }
 uint8_t config_theme() { return g_theme; }
+
+const uint8_t* config_lane_order() { return g_order; }
+
+void config_set_lane_order(const uint8_t order[MAX_WATCHES]) {
+  if (!is_valid_permutation(order, g_n_pub)) return;
+  memcpy(g_order, order, sizeof g_order);  // live
+  if (g_prefs.begin(NVS_NS, false)) {       // persisted
+    g_prefs.putBytes(NVS_ORDER_KEY, g_order, sizeof g_order);
+    g_prefs.end();
+  }
+}
 
 void config_set_theme(uint8_t t) {
   if (t >= theme_count()) return;

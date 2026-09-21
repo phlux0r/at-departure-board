@@ -5,6 +5,7 @@
 
 #include "layout.h"
 #include "painter.h"
+#include "reorder_ui.h"
 #include "rng.h"
 #include "shapes.h"
 #include "sprite_table.h"
@@ -43,6 +44,27 @@ void status_bar(Painter& p, const Board& b, const Theme& th) {
   p.text(label, W - 54, mid, MR_DATUM, FONT_SMALL, th.colours[C_DIM]);
   const int dx = W - 46;
   p.ellipse(dx - 3, mid - 3, dx + 3, mid + 3, dot);
+}
+
+// A small up/down chevron pair - always visible, toggles reorder mode. See
+// reorder_ui.h for why it sits just below the status bar rather than in it.
+void reorder_toggle_icon(Painter& p, const Theme& th) {
+  const Rect r = reorder_toggle_rect();
+  const int cx = (r.x0 + r.x1) / 2;
+  const Rgb colour = reorder_ui_active() ? th.colours[C_LIVE] : th.colours[C_DIM];
+  p.triangle(r.x0 + 2, r.y0 + 6, r.x1 - 2, r.y0 + 6, cx, r.y0, colour);
+  p.triangle(r.x0 + 2, r.y1 - 6, r.x1 - 2, r.y1 - 6, cx, r.y1, colour);
+}
+
+// One chevron, filled if it exists at this slot (top has no up, bottom no
+// down - see reorder_lane_chevron).
+void reorder_lane_chevron_icon(Painter& p, int slot, int n, bool up, const Theme& th) {
+  const Rect r = reorder_lane_chevron(slot, n, up);
+  if (r.x1 <= r.x0) return;  // doesn't exist at this slot
+  const Rgb colour = th.colours[C_LIVE];
+  const int mid_x = (r.x0 + r.x1) / 2;
+  if (up) p.triangle(r.x0, r.y1, r.x1, r.y1, mid_x, r.y0, colour);
+  else p.triangle(r.x0, r.y0, r.x1, r.y0, mid_x, r.y1, colour);
 }
 
 void times(Painter& p, const Lane& ln, const Watch& w, const Theme& th) {
@@ -206,19 +228,31 @@ bool Ui::begin() {
   return band_.createSprite(W, BAND_H) != nullptr;
 }
 
-void Ui::draw(const Board& b, uint32_t ms) {
+void Ui::draw(const Board& b, uint32_t ms, bool touch_down_edge, int touch_x, int touch_y) {
   const Theme& th = theme(b.theme);
   const float t = (ms % BOB_FOLD_MS) / 1000.0f;
   const int n = b.n_watches < MAX_WATCHES ? b.n_watches : MAX_WATCHES;
   const SizeClass size = size_class(n);
+
+  reorder_ui_touch(touch_down_edge, touch_x, touch_y, n, ms);
+  reorder_ui_tick(ms);
+  const uint8_t* order = reorder_ui_order();
+  const bool reordering = reorder_ui_active();
   for (int oy = 0; oy < H; oy += BAND_H) {
     Painter p{band_, oy, b.dimmed};
     band_.fillSprite(p.c(th.colours[C_BG]));
-    if (oy <= STATUS_H) status_bar(p, b, th);
+    if (oy <= STATUS_H) {
+      status_bar(p, b, th);
+      reorder_toggle_icon(p, th);
+    }
     for (int i = 0; i < n; i++) {
       const Lane ln = lane(i, n);
       if (ln.rect.y1 < oy || ln.rect.y0 >= oy + BAND_H) continue;  // not in this band
-      draw_lane(p, ln, b.watches[i], t, i, th, b.theme, size);
+      draw_lane(p, ln, b.watches[order[i]], t, i, th, b.theme, size);
+      if (reordering) {
+        reorder_lane_chevron_icon(p, i, n, true, th);
+        reorder_lane_chevron_icon(p, i, n, false, th);
+      }
     }
     band_.pushSprite(0, oy);
   }
