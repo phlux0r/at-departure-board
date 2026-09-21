@@ -384,21 +384,39 @@ removed them. Anything that bumps the platform has to revisit that file.
   and [espressif/arduino-esp32#9618](https://github.com/espressif/arduino-esp32/issues/9618).
   Fix: `-DUSE_HSPI_PORT`, which is now in the `esp32s3` build flags — it makes
   TFT_eSPI construct its own `SPIClass` instead of touching the shared global.
+  (Checked separately: on this driver, the Arduino-ESP32 SPI layer always
+  routes through the GPIO matrix regardless of which host you pick, so
+  choosing `HSPI` over `FSPI` costs nothing electrically - it's purely the
+  fix for the static-init crash above.)
+- With the panic fixed, the panel came up **solid white** - no crash, demo
+  scenes cycling normally in the serial log, just no image. This unit's
+  panel is a genuine **ILI9341**, not the ST7789 the classic reference build
+  has: swapping `-DST7789_DRIVER=1` for `-DILI9341_DRIVER=1` (now in the
+  `esp32s3` build flags) fixed it outright - correct colours and geometry,
+  no further `TFT_RGB_ORDER` or `TFT_INVERSION_OFF` changes needed. Confirms
+  the note above this section: the controller can't be detected in
+  software, and different sourcing runs are different chips. A blank white
+  screen with no crash is now the recognised symptom of "wrong driver
+  entirely" and is worth adding to the symptom table if it recurs.
 - The band renderer stays in internal RAM. PSRAM is slower, and the bands
   already hit 15 fps — do not move them without re-measuring.
 
 ### Still open
 
-- Whether the display actually renders correctly once wired up (colour
-  order, geometry) has not been checked yet — only that boot no longer
-  panics.
+- Frame rate and heap headroom on the S3 with a real display attached
+  (the demo's serial counters look healthy - 15.2 fps, largest free block
+  over 2 MB - but that's with PSRAM idle and nothing reading real data yet).
+- Touch: wired (T_CS 6, T_IRQ 5) but `TOUCH_CS` is deliberately undefined,
+  so TFT_eSPI's touch functions aren't compiled in yet (harmless compiler
+  `#warning`, not an error).
 
 ## Still to verify on hardware
 
 - PWM dimming driven by the app (the LEDC path itself is verified).
-- `esp32s3` / `esp32s3_demo` boots past `setup()` without panicking now, but
-  nothing past that — display output, frame rate, heap — has been checked
-  yet. See "Confirmed on hardware" above.
+- `esp32s3` / `esp32s3_demo`: boots, doesn't panic, and the display renders
+  correctly. Not yet checked: live data path (`esp32` build, secrets, WiFi),
+  and frame rate / heap under a real fetch rather than the demo scenes. See
+  "Confirmed on hardware" above.
 - The WiFi-outage path: pull WiFi, expect `stale Nm` with the last good data
   kept, the lanes dimmed and the vehicles still animating, then recovery without a reboot when
   WiFi returns. This has **not** been performed on hardware. The code paths
