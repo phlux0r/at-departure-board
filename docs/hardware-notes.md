@@ -302,9 +302,82 @@ ran before WiFi association had completed. It succeeded once the code was
 changed to wait for association rather than just for `WiFi.begin()` to
 return.
 
+## ESP32-S3 SuperMini — a second target, not yet verified on hardware
+
+Everything above was measured on the classic ESP32. `platformio.ini` also
+carries an `esp32s3` / `esp32s3_demo` pair for an **ESP32-S3 SuperMini**
+(ESP32-S3FH4R2: 4 MB in-package flash, 2 MB in-package quad PSRAM, native
+USB). Nothing in this section has been run on hardware yet — it builds, and
+that is all that is claimed.
+
+Why the S3 and not a C3: the classic build already sits at ~7 ms of frame-time
+headroom at 15 fps with the network task on the second core. The C3 is single
+core with no FPU. The S3 keeps both, and adds PSRAM as headroom.
+
+### Wiring
+
+Every pin is on the SuperMini's edge header. The map avoids the strapping pins
+(0, 3, 45, 46), the native-USB pins (19, 20), and GPIO26–32, which are wired to
+the in-package flash and PSRAM.
+
+| Signal | GPIO | Notes |
+|---|---|---|
+| SCK | 12 | Shared with touch |
+| MOSI (SDI) | 11 | Shared with touch |
+| MISO (SDO) | 13 | Shared with touch |
+| Display CS | 10 | |
+| DC / RS | 9 | |
+| RESET | 8 | |
+| Backlight LED | 7 | LEDC PWM, as on the classic board |
+| Touch CS (T_CS) | 6 | Wired, but no firmware uses it yet |
+| Touch IRQ (T_IRQ) | 5 | Optional; polling works without it |
+| VCC / GND | 3V3 / GND | |
+
+The display pins, and now the backlight pin too, are build flags rather than
+constants in `src/` — `src/backlight.cpp` takes `BACKLIGHT_PIN` and falls back
+to 32, the classic wiring, when nothing defines it. There are no other
+hard-coded GPIOs in the firmware.
+
+### Why the env looks the way it does
+
+- **`board = esp32-s3-devkitc-1`, with the flash size corrected.** There is no
+  stock definition for the N4R2 part. The stock board is an 8 MB, no-PSRAM N8,
+  so `board_upload.flash_size`, `board_upload.maximum_size` and the partition
+  table all have to be overridden; its `default_8MB.csv` would not even fit.
+- **`board_build.arduino.memory_type = qio_qspi`.** PlatformIO builds this
+  string as `<flash mode>_<psram type>` and it selects which prebuilt Arduino
+  SDK gets linked. The FH4R2 is quad flash + quad PSRAM. Getting it wrong
+  means a board that boots without PSRAM, or crashes.
+- **`-DARDUINO_USB_CDC_ON_BOOT=1`.** The S3 talks to the host over native USB.
+  Without this the serial port stays silent and the whole boot log — including
+  the IP the portal prints — is lost. `ARDUINO_USB_MODE=1` already comes from
+  the board definition.
+- **`board_build.partitions = huge_app.csv`**, for the reason in "Flash is the
+  tighter constraint" above.
+- **No `before_reset = no_reset`, no 115200 upload speed.** Those exist for the
+  classic board's CH340 and its broken auto-reset. Neither applies here. If
+  auto-reset ever does fail on a SuperMini, hold BOOT while tapping RESET.
+
+`platform = espressif32@7.1.3` pins **Arduino core 2.0.17**, which is why
+`backlight.cpp` can keep using `ledcSetup()` / `ledcAttachPin()`: core 3.x
+removed them. Anything that bumps the platform has to revisit that file.
+
+### Open questions for bring-up
+
+- The SuperMini vendor listing contradicts itself (it describes a C3 while
+  naming the S3FH4R2 part). Confirm the chip and the PSRAM from the esptool
+  output and the boot log on the first flash.
+- TFT_eSPI on the S3 uses the GPIO matrix rather than the dedicated SPI pins.
+  Bring the display up in `esp32s3_demo` on its own before anything else; if
+  it misbehaves, `-DUSE_HSPI_PORT` is the first thing to try.
+- The band renderer stays in internal RAM. PSRAM is slower, and the bands
+  already hit 15 fps — do not move them without re-measuring.
+
 ## Still to verify on hardware
 
 - PWM dimming driven by the app (the LEDC path itself is verified).
+- The whole `esp32s3` / `esp32s3_demo` pair: it builds, and has never been
+  flashed. See the section above.
 - The WiFi-outage path: pull WiFi, expect `stale Nm` with the last good data
   kept, the lanes dimmed and the vehicles still animating, then recovery without a reboot when
   WiFi returns. This has **not** been performed on hardware. The code paths

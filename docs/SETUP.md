@@ -25,7 +25,7 @@ Skip to step 7 and flash `esp32_demo`.
 
 | Part | Notes |
 |---|---|
-| **ESP32 DevKit (WROOM-32)** | Any standard dev board with a USB port. The unit here is an ESP32-D0WD-V3 — dual core, 4 MB flash, **no PSRAM needed**, CH340 USB-serial. An ESP32-S3 or C3 would need the pin numbers in `platformio.ini` revisited |
+| **ESP32 DevKit (WROOM-32)** | Any standard dev board with a USB port. The unit here is an ESP32-D0WD-V3 — dual core, 4 MB flash, **no PSRAM needed**, CH340 USB-serial. An **ESP32-S3 SuperMini** is also supported — build `esp32s3` instead of `esp32`, and wire it per [hardware-notes.md](hardware-notes.md#esp32-s3-supermini--a-second-target-not-yet-verified-on-hardware). That target builds but has not been flashed yet |
 | **2.8" 320x240 SPI TFT** | [The panel used here](https://www.aliexpress.com/item/1005004557916570.html). The common red "2.8 TFT 240xRGBx320 V1.1" module with an SD slot and an unpopulated touch footprint. Touch is not used. Listings say ILI9341; the one received was an **ST7789**, and the firmware is configured for ST7789 — see [the display note](#the-panel-is-probably-an-st7789) below |
 | **9 jumper wires** | Female-to-female if both sides have pins. Or solder direct, which is what fits a case best |
 | **USB cable** | Data, not charge-only. This trips more people up than anything else on this list |
