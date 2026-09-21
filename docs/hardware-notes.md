@@ -362,22 +362,43 @@ hard-coded GPIOs in the firmware.
 `backlight.cpp` can keep using `ledcSetup()` / `ledcAttachPin()`: core 3.x
 removed them. Anything that bumps the platform has to revisit that file.
 
-### Open questions for bring-up
+### Confirmed on hardware, 2026-09-21
 
-- The SuperMini vendor listing contradicts itself (it describes a C3 while
-  naming the S3FH4R2 part). Confirm the chip and the PSRAM from the esptool
-  output and the boot log on the first flash.
-- TFT_eSPI on the S3 uses the GPIO matrix rather than the dedicated SPI pins.
-  Bring the display up in `esp32s3_demo` on its own before anything else; if
-  it misbehaves, `-DUSE_HSPI_PORT` is the first thing to try.
+- The vendor listing's C3/RISC-V description was wrong. `esptool.py flash_id`
+  on the actual board reports `ESP32-S3 (QFN56) rev v0.2`, `Embedded Flash 4MB
+  (XMC)`, `Embedded PSRAM 2MB (AP_3v3)` — exactly the SuperMini's advertised
+  ESP32-S3FH4R2, and exactly what `board_upload.flash_size` and
+  `board_build.arduino.memory_type = qio_qspi` assume.
+- `esp32s3_demo` as first pushed panicked immediately on boot — Guru
+  Meditation, `StoreProhibited`, backtrace in
+  `TFT_eSPI::begin_tft_write() → writecommand() → init() → setup()`. Without
+  `USE_HSPI_PORT` (or `USE_FSPI_PORT`), TFT_eSPI's ESP32-S3 driver
+  (`Processors/TFT_eSPI_ESP32_S3.c`) defaults to a *reference* to the Arduino
+  core's global `SPI` object (`SPIClass& spi = SPI;`) instead of constructing
+  its own. Whether that reference is safe to use depends on C++
+  static-initialization order across separately-compiled translation units,
+  and on Arduino core 2.0.17 (what `espressif32@7.1.3` ships) it is not: the
+  board crashes the instant the first SPI transaction runs, even though the
+  build itself succeeds. Documented for this exact library-and-core
+  combination in [Bodmer/TFT_eSPI#3329](https://github.com/Bodmer/TFT_eSPI/issues/3329)
+  and [espressif/arduino-esp32#9618](https://github.com/espressif/arduino-esp32/issues/9618).
+  Fix: `-DUSE_HSPI_PORT`, which is now in the `esp32s3` build flags — it makes
+  TFT_eSPI construct its own `SPIClass` instead of touching the shared global.
 - The band renderer stays in internal RAM. PSRAM is slower, and the bands
   already hit 15 fps — do not move them without re-measuring.
+
+### Still open
+
+- Whether the display actually renders correctly once wired up (colour
+  order, geometry) has not been checked yet — only that boot no longer
+  panics.
 
 ## Still to verify on hardware
 
 - PWM dimming driven by the app (the LEDC path itself is verified).
-- The whole `esp32s3` / `esp32s3_demo` pair: it builds, and has never been
-  flashed. See the section above.
+- `esp32s3` / `esp32s3_demo` boots past `setup()` without panicking now, but
+  nothing past that — display output, frame rate, heap — has been checked
+  yet. See "Confirmed on hardware" above.
 - The WiFi-outage path: pull WiFi, expect `stale Nm` with the last good data
   kept, the lanes dimmed and the vehicles still animating, then recovery without a reboot when
   WiFi returns. This has **not** been performed on hardware. The code paths
