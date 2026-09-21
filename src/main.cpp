@@ -167,22 +167,26 @@ void loop() {
   // countdown is drawn from the bad clock.
   const int64_t now = time(nullptr);
 
-  // One touch read per frame, shared by the bring-up log below (down/up
-  // edges, printed on every transition - see touch.h) and the reorder UI
-  // (the press edge only - a held finger must not repeat a swap every
-  // frame at 15 fps).
+  // One touch read per frame. The raw down/up edges go straight to the
+  // bring-up log below - every transition, flicker included, since seeing
+  // that flicker is the point. The reorder UI acts on touch_debounce()'s
+  // confirmed edge instead (touch.h), or a noisy contact could fire (and
+  // silently cancel out) more than one swap per physical tap.
   static bool touch_was_down = false;
   uint16_t tx = 0, ty = 0;
   const bool touch_is_down = touch_read(tft, &tx, &ty);
-  const bool touch_down_edge = touch_is_down && !touch_was_down;
-  if (touch_down_edge) {
+  if (touch_is_down && !touch_was_down) {
     Serial.printf("touch: down at %u,%u\n", tx, ty);
   } else if (!touch_is_down && touch_was_down) {
     Serial.println("touch: up");
   }
   touch_was_down = touch_is_down;
 
-  ui.draw(board_now(start, now), start, touch_down_edge, tx, ty);
+  uint16_t confirmed_x = 0, confirmed_y = 0;
+  const bool touch_confirmed =
+      touch_debounce(touch_is_down, tx, ty, start, &confirmed_x, &confirmed_y);
+
+  ui.draw(board_now(start, now), start, touch_confirmed, confirmed_x, confirmed_y);
 
   const uint32_t took = millis() - start;
   frames++;

@@ -426,9 +426,22 @@ removed them. Anything that bumps the platform has to revisit that file.
   `config_watches()` or the fetch task's data, which is what makes it safe
   to change live rather than needing the usual "save and reboot". Applied
   live and persisted to NVS on every swap, same pattern as the theme.
-  **Not yet run on hardware** - the chevron positions in particular (see
-  `reorder_lane_chevron()`) are a first pass Robert expects to tweak once
-  they're seen and tapped on the actual panel.
+  First hardware pass found two bugs, both fixed:
+  - The toggle was invisible - drawn *before* the lane loop, so lane 0's
+    card (which starts at y=21, inside the toggle's own y:12-34) painted
+    over it every frame. `Ui::draw()` now draws the status bar and toggle
+    last, on top, not first.
+  - Chevron taps looked unresponsive despite the raw touch log showing
+    every tap registering. This panel's resistive touch is noisy enough at
+    the moment of contact that one physical tap can read down/up/down
+    across a couple of frames - each read a real edge, but read together as
+    two swaps that silently cancelled back out. `touch_debounce()`
+    (`src/touch.{h,cpp}`) now requires 2 consecutive down reads and a
+    300ms cooldown before it reports a confirmed press; the reorder UI
+    acts on that instead of the raw edge. The bring-up serial log still
+    prints every raw edge deliberately, flicker included.
+  Chevron positions themselves are still a first pass Robert expects to
+  tweak once they're seen and tapped on the actual panel.
 
 ## Still to verify on hardware
 

@@ -241,10 +241,6 @@ void Ui::draw(const Board& b, uint32_t ms, bool touch_down_edge, int touch_x, in
   for (int oy = 0; oy < H; oy += BAND_H) {
     Painter p{band_, oy, b.dimmed};
     band_.fillSprite(p.c(th.colours[C_BG]));
-    if (oy <= STATUS_H) {
-      status_bar(p, b, th);
-      reorder_toggle_icon(p, th);
-    }
     for (int i = 0; i < n; i++) {
       const Lane ln = lane(i, n);
       if (ln.rect.y1 < oy || ln.rect.y0 >= oy + BAND_H) continue;  // not in this band
@@ -253,6 +249,13 @@ void Ui::draw(const Board& b, uint32_t ms, bool touch_down_edge, int touch_x, in
         reorder_lane_chevron_icon(p, i, n, true, th);
         reorder_lane_chevron_icon(p, i, n, false, th);
       }
+    }
+    // After the lanes, not before: the toggle sits in y:12-34 (reorder_ui.h),
+    // which overlaps lane 0's card (it starts at y0+3=21) - drawing it last
+    // is what keeps it on top rather than painted over.
+    if (oy <= STATUS_H) {
+      status_bar(p, b, th);
+      reorder_toggle_icon(p, th);
     }
     band_.pushSprite(0, oy);
   }

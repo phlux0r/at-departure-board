@@ -53,3 +53,34 @@ void touch_begin(TFT_eSPI&) {}
 bool touch_read(TFT_eSPI&, uint16_t*, uint16_t*) { return false; }
 
 #endif
+
+namespace {
+// Both amounts are a guess to be tuned against how this panel actually
+// bounces, not a measured constant.
+constexpr uint8_t CONFIRM_READS = 2;    // consecutive down reads to accept
+constexpr uint32_t COOLDOWN_MS = 300;   // then ignore further edges a while
+
+uint8_t g_consecutive_down = 0;
+uint32_t g_last_edge_ms = 0;
+bool g_confirmed_down = false;  // true from a confirmed press until a read
+                                // comes back up - latches out any further
+                                // flicker within the same physical tap
+}  // namespace
+
+bool touch_debounce(bool down, uint16_t x, uint16_t y, uint32_t now_ms, uint16_t* out_x,
+                     uint16_t* out_y) {
+  if (!down) {
+    g_consecutive_down = 0;
+    g_confirmed_down = false;
+    return false;
+  }
+  if (g_confirmed_down) return false;
+  if (++g_consecutive_down < CONFIRM_READS) return false;
+  if (now_ms - g_last_edge_ms < COOLDOWN_MS) return false;
+
+  g_confirmed_down = true;
+  g_last_edge_ms = now_ms;
+  *out_x = x;
+  *out_y = y;
+  return true;
+}
