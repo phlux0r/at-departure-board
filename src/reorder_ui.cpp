@@ -24,12 +24,14 @@ bool rect_contains(Rect r, int x, int y) {
 void reorder_ui_begin() { memcpy(g_order, config_lane_order(), sizeof g_order); }
 
 Rect reorder_toggle_rect() {
-  // Inside the status bar, centred in the gap between the location text and
-  // the live/stale label. An earlier calibration was inaccurate enough that
-  // touch measurably missed the ~20px nearest every edge, which pushed this
-  // below the (18px-tall) status bar entirely - recalibrating fixed that
-  // (docs/hardware-notes.md), so it moved back in.
-  return {240, 3, 262, 15};
+  // Inside the status bar, in the gap between the location text and the
+  // live/stale label - shifted left of that label's own space (which runs
+  // to about x=266, status_bar() in ui.cpp) so it doesn't sit under the
+  // "live"/"stale Nm" text. An earlier calibration was inaccurate enough
+  // that touch measurably missed the ~20px nearest every edge, which
+  // pushed this below the (18px-tall) status bar entirely - recalibrating
+  // fixed that (docs/hardware-notes.md), so it moved back in.
+  return {194, 3, 216, 15};
 }
 
 Rect reorder_lane_chevron(int slot, int n, bool up) {
