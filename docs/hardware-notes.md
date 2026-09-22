@@ -464,8 +464,9 @@ full-screen page over the board with three things on it:
 
 - **Theme** — taps cycle it, live, as the web page's theme select already did.
 - **Brightness** — `-`/`+` in ~10% steps. This is the first thing that ever
-  actually drives `backlight_set()` with anything but 255, so the LEDC dimming
-  path the design always assumed is finally exercised. Clamped at
+  actually drives `backlight_set()` with anything but 255, and it **confirmed
+  the LEDC dimming path on hardware** (2026-09-22) — the design assumed it
+  from the start, and nothing had exercised it until now. Clamped at
   `BRIGHTNESS_MIN`: a board dimmed to nothing looks broken, and the only way
   back is a setting you can no longer read.
 - **Lanes** — an on/off row per published watch.
@@ -494,6 +495,11 @@ schema — no schema version bump, nothing for the web page to round-trip. It
 can move into the schema whenever brightness wants to be settable from the
 browser too.
 
+Confirmed on hardware 2026-09-22: the page opens, brightness visibly dims and
+brightens, and the rows are comfortable to hit — at 28-30px tall they are a
+much easier target than the reorder chevrons, which needed two rounds of
+position tuning.
+
 Two things about DEMO_MODE, which never calls `config_begin()`: the settings
 page's Lanes section is empty there (no watches configured), and cycling the
 theme changes the page's own reading of it but not the board behind it, since
@@ -501,9 +507,6 @@ demo scenes carry their own theme. Both work normally on the live build.
 
 ## Still to verify on hardware
 
-- PWM dimming driven by the app: the settings page's brightness control is
-  the first thing to call `backlight_set()` with anything but 255, and it
-  has not been run on hardware yet.
 - Exact frame rate and heap headroom on the S3 under a real, sustained live
   fetch - confirmed working end to end, but not measured against the
   classic board's numbers the way "Memory" and "Display performance" above
