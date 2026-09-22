@@ -359,6 +359,39 @@ On hardware the board now logs, for stop 122:
 dirs 122: O-W-201/0 no  O-W-201/1 no  E-W-201/0 no  E-W-201/1 yes -> ok
 ```
 
+## Open: vehicle occupancy (the AT Mobile "people" icon)
+
+AT Mobile shows how full a bus or train is, as four people icons under Live
+Departures — *likely empty*, *likely space available*, *likely near the limit
+of safe distancing*, *likely not accepting passengers*. That is **vehicle**
+occupancy, not station crowding, and those four map onto GTFS-Realtime's
+`OccupancyStatus`.
+
+`OccupancyStatus` rides on **VehiclePositions**, not TripUpdates — so it is
+in the entities the "Realtime" section above deliberately throws away. The
+combined feed carries them (12 entities against `/tripupdates`' 6 for the
+same query, 5,836 bytes against 3,202); whether a dedicated
+`/realtime/legacy/vehiclepositions` path exists is unknown, and not worth
+guessing given `/trip-updates` is a 404 while `/tripupdates` is not.
+
+Unverified, and deliberately not assumed:
+
+- whether AT populates `occupancy_status` at all (it is optional in the spec
+  and marked experimental, so being in the schema proves nothing),
+- which modes and routes carry it — trains, buses with passenger counters, or
+  a subset,
+- what it would cost the board in bytes and heap.
+
+`python tools/probe_occupancy.py` answers all three against the live API. It
+needs a key with the Realtime product, reads one from `AT_API_KEY` or
+`src/secrets.h`, and prints coverage by route. Record what it finds here.
+
+Worth noting the cost calculus has moved: skipping vehicle entities was
+decided for the classic ESP32, where the largest contiguous block was 114 KB.
+The S3 measures a 2 MB block and 144 KB of lowest heap
+(docs/hardware-notes.md), so the ~45% of extra bytes is affordable there in a
+way it was not when that call was made.
+
 ## Realtime only reports trips already in progress
 
 Asking `/realtime/legacy/tripupdates?tripid=...` about trips that haven't
