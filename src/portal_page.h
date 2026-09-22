@@ -39,13 +39,24 @@ const char PORTAL_PAGE[] PROGMEM = R"HTML(<!doctype html>
   applies when you save, which restarts the board.</p>
 </fieldset>
 
-<fieldset><legend>Watches</legend>
+<fieldset><legend>Groups</legend>
+ <div id="groups"></div>
+ <button type="button" id="addgroup">Add group</button>
+ <p class="note">A group is a saved set of watches &mdash; a weekday commute, a
+  weekend one. Maximum four. <b>Active</b> is the one the board fetches and
+  shows; only one can be active at a time, and you can also switch it from the
+  cog on the panel. <b>Edit</b> picks which group's watches you are editing
+  below, which does not have to be the active one.</p>
+</fieldset>
+
+<fieldset><legend>Watches in <span id="editing-name"></span></legend>
  <div id="watches"></div>
  <button type="button" id="add">Add watch</button>
- <p class="note">Maximum four. Stop code is the number on the pole, letters and
-  digits only. Leave the route blank to show every route at that stop. The
-  toward stop is one further along in the direction you care about &mdash; it
-  is not a compass direction.</p>
+ <p class="note">Maximum four per group. Stop code is the number on the pole,
+  letters and digits only. Leave the route blank to show every route at that
+  stop. The toward stop is one further along in the direction you care about
+  &mdash; it is not a compass direction. Every group needs at least one watch
+  switched on.</p>
 </fieldset>
 
 <button type="button" class="primary" id="save">Save and restart</button>
@@ -53,13 +64,15 @@ const char PORTAL_PAGE[] PROGMEM = R"HTML(<!doctype html>
 
 <script>
 const $ = s => document.querySelector(s);
-let watches = [];
-// The last document the board sent, so a save can rebuild it with only the
-// active group's watches replaced. The groups UI is not built yet; until it
-// is, this page edits the active group and leaves the others untouched.
-let loaded = null;
+let groups = [];       // [{name, watches: [...]}] - the whole config, not one group
+let activeGroup = 0;   // the group the BOARD fetches and shows
+let editing = 0;       // the group whose watches this page is editing
 let checking = false;  // true while a /api/stop request is in flight
 let nextWatchId = 1;  // stable per-row id, since array indexes shift on removal
+
+// Active and editing are deliberately separate: you need to be able to set up
+// next week's group without pointing the board at it yet.
+const watchesOf = () => (groups[editing] ? groups[editing].watches : []);
 
 // The board serves both the departure fetcher and this portal from one heap,
 // and a stop check opens its own TLS session to Auckland Transport. Two of
@@ -72,7 +85,89 @@ function setChecking(v) {
   document.querySelectorAll('[data-a=check]').forEach(b => b.disabled = v);
 }
 
+// Group rows. The name input deliberately does NOT re-render on every
+// keystroke - that would drop focus mid-word - so it updates the model and
+// the one heading that echoes it.
+function renderGroups() {
+  const box = $('#groups');
+  box.innerHTML = '';
+  groups.forEach((g, i) => {
+    const d = document.createElement('div');
+    d.className = 'row';
+    d.style.cssText = 'border-top:1px solid #8883;padding:10px 0;align-items:center';
+
+    const pick = document.createElement('div');
+    pick.style.cssText = 'flex:0 0 auto';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.textContent = i === editing ? 'Editing' : 'Edit';
+    edit.disabled = i === editing;
+    edit.onclick = () => { editing = i; renderGroups(); render(); };
+    pick.appendChild(edit);
+
+    const nameBox = document.createElement('div');
+    const nameLabel = document.createElement('label');
+    nameLabel.textContent = 'Name';
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.maxLength = 23;
+    name.value = g.name || '';
+    name.oninput = () => { g.name = name.value; showEditingName(); };
+    nameBox.appendChild(nameLabel);
+    nameBox.appendChild(name);
+
+    const act = document.createElement('div');
+    act.style.cssText = 'flex:0 0 auto';
+    const actLabel = document.createElement('label');
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'active';
+    radio.checked = i === activeGroup;
+    radio.onchange = () => { activeGroup = i; };
+    actLabel.appendChild(radio);
+    actLabel.appendChild(document.createTextNode(' Active'));
+    act.appendChild(actLabel);
+
+    const rm = document.createElement('div');
+    rm.style.cssText = 'flex:0 0 auto';
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = 'Remove';
+    // The board needs somewhere to point: the last group cannot go.
+    del.disabled = groups.length <= 1;
+    del.onclick = () => {
+      groups.splice(i, 1);
+      // Both indexes have to survive the hole the splice left behind. Order
+      // matters: test for "this was the one" FIRST, because a later index is
+      // out of range only by virtue of the shift, and wants shifting down
+      // rather than resetting.
+      if (activeGroup === i) activeGroup = 0;
+      else if (activeGroup > i) activeGroup--;
+      if (editing === i) editing = 0;
+      else if (editing > i) editing--;
+      renderGroups();
+      render();
+    };
+    rm.appendChild(del);
+
+    d.appendChild(pick);
+    d.appendChild(nameBox);
+    d.appendChild(act);
+    d.appendChild(rm);
+    box.appendChild(d);
+  });
+  $('#addgroup').disabled = groups.length >= 4;
+  showEditingName();
+}
+
+function showEditingName() {
+  const g = groups[editing];
+  // textContent, never innerHTML: a group name is user input.
+  $('#editing-name').textContent = g && g.name ? g.name : 'this group';
+}
+
 function render() {
+  const watches = watchesOf();
   $('#watches').innerHTML = '';
   watches.forEach((w, i) => {
     const d = document.createElement('div');
@@ -93,11 +188,11 @@ function render() {
       if (k === 'enabled') { el.checked = w.enabled; el.onchange = () => w.enabled = el.checked; }
       else { el.value = w[k] || ''; el.oninput = () => w[k] = el.value; }
     });
-    d.querySelector('[data-a=del]').onclick = () => { watches.splice(i, 1); render(); };
+    d.querySelector('[data-a=del]').onclick = () => { watchesOf().splice(i, 1); render(); };
     d.querySelector('[data-a=check]').onclick = () => check(w.id);
     $('#watches').appendChild(d);
   });
-  $('#add').disabled = watches.length >= 4;
+  $('#add').disabled = watchesOf().length >= 4;
   // A fresh render() rebuilds every Check button, so re-apply the in-flight
   // disable in case a check is still running when watches re-render.
   if (checking) document.querySelectorAll('[data-a=check]').forEach(b => b.disabled = true);
@@ -118,7 +213,7 @@ function showCheckResult(id, text, cls) {
 
 async function check(id) {
   if (checking) return;  // one /api/stop at a time, board-wide
-  const w = watches.find(x => x.id === id);
+  const w = watchesOf().find(x => x.id === id);
   if (!w) return;
   setChecking(true);
   showCheckResult(id, 'checking…', '');
@@ -134,11 +229,17 @@ async function check(id) {
 
 async function load() {
   const cfg = await (await fetch('/api/config')).json();
-  // Kept whole so save can put back the groups this page does not edit yet.
-  loaded = cfg;
   $('#loc').value = cfg.location;
-  const g = cfg.groups[cfg.active_group] || {watches: []};
-  watches = g.watches.map(w => Object.assign({id: nextWatchId++}, w));
+  groups = (cfg.groups || []).map(g => ({
+    name: g.name,
+    // The client-only id keeps a row's check result attached to it across
+    // re-renders; it is stripped again on save.
+    watches: (g.watches || []).map(w => Object.assign({id: nextWatchId++}, w))
+  }));
+  if (!groups.length) groups = [{name: 'Main', watches: []}];
+  activeGroup = cfg.active_group < groups.length ? cfg.active_group : 0;
+  editing = activeGroup;  // the group you most likely came here to change
+  renderGroups();
   render();
   const t = await (await fetch('/api/themes')).json();
   const sel = $('#theme');
@@ -156,9 +257,18 @@ async function load() {
 }
 
 $('#add').onclick = () => {
+  const watches = watchesOf();
   if (watches.length >= 4) return;
   watches.push({id: nextWatchId++, label: '', stop_code: '', route_short_name: '',
                 toward_stop_code: '', enabled: true});
+  render();
+};
+
+$('#addgroup').onclick = () => {
+  if (groups.length >= 4) return;
+  groups.push({name: 'Group ' + (groups.length + 1), watches: []});
+  editing = groups.length - 1;  // you just made it; you want to fill it in
+  renderGroups();
   render();
 };
 
@@ -172,19 +282,33 @@ $('#save').onclick = async () => {
   const s = $('#status');
   s.textContent = 'saving…';
   s.className = '';
-  // Drop the client-only "id" used to track rows across re-renders; the
-  // board's schema only knows the five watch fields below.
-  const edited = watches.map(w => ({
-    label: w.label, stop_code: w.stop_code,
-    route_short_name: w.route_short_name, toward_stop_code: w.toward_stop_code,
-    enabled: w.enabled
-  }));
-  const groups = (loaded ? loaded.groups : []).map(
-    (g, i) => ({name: g.name, watches: i === loaded.active_group ? edited : g.watches}));
-  if (!groups.length) groups.push({name: 'Main', watches: edited});
+  // The board rejects a group with nothing switched on, but its error cannot
+  // say which group - so catch it here, where the group has a name, rather
+  // than bouncing back something the page cannot point at.
+  const empty = groups.findIndex(g => !g.watches.some(w => w.enabled && w.stop_code));
+  if (empty >= 0) {
+    s.textContent = '"' + (groups[empty].name || 'group ' + (empty + 1)) +
+                    '" needs at least one watch switched on, with a stop code';
+    s.className = 'bad';
+    editing = empty;  // take them to the group that needs fixing
+    renderGroups();
+    render();
+    return;
+  }
+
   const body = JSON.stringify({
     v: 2, location: $('#loc').value, theme: Number($('#theme').value),
-    active_group: loaded ? loaded.active_group : 0, groups: groups
+    active_group: activeGroup,
+    // Drop the client-only "id" used to track rows across re-renders; the
+    // board's schema only knows the five watch fields below.
+    groups: groups.map(g => ({
+      name: g.name,
+      watches: g.watches.map(w => ({
+        label: w.label, stop_code: w.stop_code,
+        route_short_name: w.route_short_name, toward_stop_code: w.toward_stop_code,
+        enabled: w.enabled
+      }))
+    }))
   });
   let r, j;
   try { r = await fetch('/api/config', {method: 'POST', body: body}); j = await r.json(); }
