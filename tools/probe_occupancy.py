@@ -135,6 +135,13 @@ def summarise(doc, body):
                 if "status" in p.lower():
                     found = v
                     values[str(v)] = values.get(str(v), 0) + 1
+
+        # ONLY vehicle entities. A trip_update carries trip.route_id too, and
+        # counting those inflates the denominator with entities that could
+        # never have reported occupancy in the first place - which makes every
+        # route look far worse covered than it is.
+        if not (isinstance(e, dict) and e.get("vehicle") is not None):
+            continue
         route = None
         for p, v in walk(e):
             if p.endswith("trip.route_id"):
@@ -202,7 +209,8 @@ def main():
                     name = "a string, not the spec's integer enum"
                 print(f"    {raw:<4} x{n:<5} {name}")
             with_occ = sum(1 for seen, _ in s["by_route"].values() if seen)
-            print(f"  routes with occupancy: {with_occ} of {len(s['by_route'])}")
+            print(f"  routes with occupancy: {with_occ} of {len(s['by_route'])}"
+                  "   (denominators below are VEHICLE entities only)")
 
             rows = sorted(s["by_route"].items())
             if args.route:

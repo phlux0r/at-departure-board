@@ -408,30 +408,24 @@ Two things follow for anything built on this:
   exercised here; a peak-hour probe would say more about whether `3` and `5`
   are common enough to be worth drawing.
 
-### Per-route coverage is what decides it, and it is worse than the average
+### Per-route coverage — measure it, and mind the denominator
 
-The network figure hides a lot. The two routes this board actually watches:
+The network figure hides a lot, so check the routes you actually watch with
+`--route` rather than trusting the headline.
 
-| Route | Vehicles reporting |
-|---|---|
-| `931-203` | 4 of 11 (36%) |
-| `97R-203` | 3 of 11 (27%) |
+**A correction worth keeping**, because the same mistake is easy to repeat:
+the first version of `probe_occupancy.py` counted *every* entity carrying
+`trip.route_id` into each route's denominator. A `trip_update` has one of
+those too, and only a `vehicle` entity can ever carry occupancy — so each
+route's coverage came out diluted by however many trip updates it had,
+making rail in particular look far worse than it is (a line showed as "12 of
+142", which should have been a tell: Auckland does not run 142 trains on one
+line). The denominator is vehicle entities only. Any figure recorded here
+from before 2026-09-22 with an implausibly large denominator came from the
+broken version.
 
-About a third, against 53% network-wide — so check your own routes with
-`--route` before building anything on this, rather than trusting the
-headline number.
-
-Worse, that sample counts every vehicle *currently in service*. The board
-shows the next twenty minutes, and "Realtime only reports trips already in
-progress" below means a departure that has not left its origin yet has no
-vehicle to report occupancy for at all. So the figure for *the departures a
-lane actually displays* is lower again than a third — the second departure in
-a lane will almost never have it.
-
-Combined with 89% of reported values being `EMPTY` or `MANY_SEATS_AVAILABLE`,
-and `STANDING_ROOM_ONLY` or worse running at ~1.4% of reports across both
-runs, the information on offer for these stops is thin: an icon that is
-absent most of the time and says "not busy" when it appears.
+The headline numbers above — 52-53% of vehicle entities, 58% of routes — were
+computed separately and are unaffected.
 
 ### It has to be the filtered combined feed
 
