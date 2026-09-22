@@ -222,6 +222,27 @@ const char* config_location() {
 }
 uint8_t config_theme() { return g_theme; }
 
+uint8_t config_n_groups() { return g_cfg.n_groups; }
+uint8_t config_active_group() { return g_cfg.active_group; }
+
+const char* config_group_name(uint8_t index) {
+  return index < g_cfg.n_groups ? g_cfg.groups[index].name : "";
+}
+
+bool config_set_active_group(uint8_t index) {
+  if (index >= g_cfg.n_groups || index == g_cfg.active_group) return false;
+
+  // Serialised from a copy, like config_set_lane_visible(): g_cfg is what the
+  // portal reads on core 0 and what g_pub's pointers alias into, so it must
+  // not move under either of them. The reboot is what makes the change real.
+  Config snapshot = g_cfg;
+  snapshot.theme = g_theme;
+  snapshot.active_group = index;
+  if (cfg_serialize(snapshot, g_json_ui, CFG_JSON_CAP) == 0) return false;
+  store_json(g_json_ui);
+  return true;
+}
+
 const uint8_t* config_lane_order() { return g_order; }
 
 uint8_t config_brightness() { return g_brightness; }

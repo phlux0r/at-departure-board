@@ -328,9 +328,15 @@ image.
 ### The settings page (ESP32-S3 build only)
 
 Tap the cog in the status bar for a page with the theme, the backlight
-brightness, and an on/off row per lane. All three apply immediately and are
-remembered across reboots. The page closes on the **X**, on the cog again, or
-on its own after about 30 seconds.
+brightness, a **Group** row, and an on/off row per lane in the active group.
+The page closes on the **X**, on the cog again, or on its own after about 30
+seconds.
+
+Theme, brightness and the lane toggles all apply immediately and are
+remembered across reboots. **Switching group is the exception: it restarts the
+board**, because a different group means different stops and the board has to
+go and fetch them. Tapping the group already active does nothing, so a stray
+tap can't cost you a reboot.
 
 Switching a lane off here hides it straight away and stops the board fetching
 it from the next boot — so switching it back on shows its departures

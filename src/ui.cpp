@@ -94,21 +94,18 @@ void settings_row(Painter& p, Rect r, const char* label, const Theme& th) {
 // 320x240 there is no room for both, and the board is still there when the
 // page closes.
 void settings_page(Painter& p, const Board& b, const Theme& th) {
-  p.text("Settings", 10, 13, ML_DATUM, FONT_BADGE, th.colours[C_TEXT]);
+  p.text("Settings", 10, 12, ML_DATUM, FONT_BADGE, th.colours[C_TEXT]);
   const Rect x = settings_close_rect();
   p.rrect(x.x0, x.y0, x.x1, x.y1, 4, th.colours[C_PANEL]);
   p.text("X", (x.x0 + x.x1) / 2, (x.y0 + x.y1) / 2, MC_DATUM, FONT_SMALL, th.colours[C_TEXT]);
 
-  const Rect tr = settings_theme_rect();
-  settings_row(p, tr, "Theme", th);
-  p.text(theme(config_theme()).name, tr.x1 - 10, (tr.y0 + tr.y1) / 2, MR_DATUM, FONT_BADGE,
+  // Theme on the left of the top row, brightness on the right.
+  const Rect top = settings_top_rect(), tr = settings_theme_rect();
+  p.rrect(top.x0, top.y0, top.x1, top.y1, 4, th.colours[C_PANEL]);
+  p.text("Theme", tr.x0 + 10, (tr.y0 + tr.y1) / 2, ML_DATUM, FONT_SMALL, th.colours[C_DIM]);
+  p.text(theme(config_theme()).name, tr.x1 - 8, (tr.y0 + tr.y1) / 2, MR_DATUM, FONT_BADGE,
          th.colours[C_LIVE]);
 
-  const Rect br = settings_bright_rect();
-  settings_row(p, br, "Brightness", th);
-  char pct[8];
-  snprintf(pct, sizeof pct, "%d%%", (config_brightness() * 100 + 127) / 255);
-  p.text(pct, 244, (br.y0 + br.y1) / 2, MC_DATUM, FONT_BADGE, th.colours[C_TEXT]);
   const Rect minus = settings_bright_minus_rect(), plus = settings_bright_plus_rect();
   p.rrect(minus.x0, minus.y0, minus.x1, minus.y1, 4, th.colours[C_PANEL_HI]);
   p.rrect(plus.x0, plus.y0, plus.x1, plus.y1, 4, th.colours[C_PANEL_HI]);
@@ -116,17 +113,38 @@ void settings_page(Painter& p, const Board& b, const Theme& th) {
          th.colours[C_TEXT]);
   p.text("+", (plus.x0 + plus.x1) / 2, (plus.y0 + plus.y1) / 2, MC_DATUM, FONT_BADGE,
          th.colours[C_TEXT]);
+  char pct[8];
+  snprintf(pct, sizeof pct, "%d%%", (config_brightness() * 100 + 127) / 255);
+  p.text(pct, (minus.x1 + plus.x0) / 2, (minus.y0 + minus.y1) / 2, MC_DATUM, FONT_SMALL,
+         th.colours[C_TEXT]);
+
+  // Groups, as chips across one row: the lane rows below need the height.
+  const int n_groups = config_n_groups();
+  if (n_groups > 0) {
+    p.text("Group", 10, 68, ML_DATUM, FONT_SMALL, th.colours[C_DIM]);
+    const uint8_t active = config_active_group();
+    for (int i = 0; i < n_groups; i++) {
+      const Rect r = settings_group_rect(i, n_groups);
+      if (r.x1 <= r.x0) break;
+      const bool on = i == active;
+      p.rrect(r.x0, r.y0, r.x1, r.y1, 4, on ? th.colours[C_LIVE] : th.colours[C_PANEL]);
+      // Names run to 23 characters and a chip is ~12 wide at this font, so
+      // the draw clips rather than wraps - the full name is on the setup page.
+      p.text(config_group_name(i), (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, MC_DATUM, FONT_SMALL,
+             on ? th.colours[C_DARK] : th.colours[C_TEXT]);
+    }
+  }
 
   int n = config_n_watches();
   if (n > b.n_watches) n = b.n_watches;  // the board is what has labels to show
   if (n == 0) {
     // DEMO_MODE, where config_begin() never runs and there are no watches to
     // switch. Theme and brightness above still work.
-    p.text("No watches configured", 10, 112, TL_DATUM, FONT_SMALL, th.colours[C_DIM]);
+    p.text("No watches configured", 10, 124, TL_DATUM, FONT_SMALL, th.colours[C_DIM]);
     return;
   }
 
-  p.text("Lanes", 10, 100, ML_DATUM, FONT_SMALL, th.colours[C_DIM]);
+  p.text("Lanes", 10, 112, ML_DATUM, FONT_SMALL, th.colours[C_DIM]);
   const bool* visible = config_lane_visible();
   for (int i = 0; i < n && i < MAX_WATCHES; i++) {
     const Rect r = settings_lane_rect(i);

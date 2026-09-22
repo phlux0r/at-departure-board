@@ -22,6 +22,23 @@ const char* config_location();
 uint8_t config_theme();
 void config_set_theme(uint8_t t);  // applies live AND persists
 
+// The groups, for the settings page's picker. Names are the panel captions;
+// config_group_name() returns "" for an index that does not exist.
+uint8_t config_n_groups();
+uint8_t config_active_group();
+const char* config_group_name(uint8_t index);
+
+// Persists a new active group to NVS and NOTHING else - the in-RAM config is
+// deliberately untouched, exactly as config_save_json() leaves it, because a
+// different group means different stops and the fetch task is reading the
+// current ones on core 0 with no lock. THE CALLER MUST REBOOT: the new group
+// arrives via config_begin() on the way back up, at the one moment nothing
+// else is reading it.
+//
+// False (and nothing written) if the index does not exist or is already
+// active, so a stray tap cannot cost a reboot.
+bool config_set_active_group(uint8_t index);
+
 // Which watch is drawn in each screen slot: order()[slot] is a watch index,
 // 0 <= index < config_n_watches(). Only the first config_n_watches() entries
 // are meaningful. This is display order only - it never reorders, reads, or

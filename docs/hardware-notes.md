@@ -506,7 +506,15 @@ full-screen page over the board with three things on it:
   from the start, and nothing had exercised it until now. Clamped at
   `BRIGHTNESS_MIN`: a board dimmed to nothing looks broken, and the only way
   back is a setting you can no longer read.
-- **Lanes** — an on/off row per published watch.
+- **Group** — the configured groups as chips across one row; tapping one
+  makes it active. Chips rather than a row each because four groups and four
+  lanes both need the height, and at a size worth tapping they do not both
+  fit as lists. This is the one control here that cannot apply live: a
+  different group means different stops, and the fetch task is reading the
+  current ones on core 0 with no lock, so it persists and reboots - the same
+  save-and-restart the setup page has always used for watches. Tapping the
+  active chip is refused rather than costing a pointless reboot.
+- **Lanes** — an on/off row per published watch in the active group.
 
 The lane toggle is a *display*-level hide, which is what lets it be instant.
 The fetch task keeps fetching a hidden watch, so switching one back on shows

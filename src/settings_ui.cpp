@@ -1,7 +1,10 @@
 #include "settings_ui.h"
 
+#include <Arduino.h>  // ESP.restart, after a group switch
+
 #include "config.h"
-#include "model.h"  // MAX_WATCHES
+#include "config_schema.h"  // MAX_GROUPS
+#include "model.h"          // MAX_WATCHES
 #include "reorder_ui.h"
 #include "theme.h"
 
@@ -30,15 +33,26 @@ Rect settings_cog_rect() {
   return {t.x0 - 30, t.y0, t.x0 - 8, t.y1};
 }
 
-Rect settings_close_rect() { return {286, 2, 314, 26}; }
-Rect settings_theme_rect() { return {8, 30, 312, 60}; }
-Rect settings_bright_rect() { return {8, 64, 312, 94}; }
-Rect settings_bright_minus_rect() { return {180, 64, 216, 94}; }
-Rect settings_bright_plus_rect() { return {268, 64, 304, 94}; }
+Rect settings_close_rect() { return {286, 2, 314, 24}; }
+
+// Theme and brightness share one row. Four groups and four lanes both need a
+// row each below, and at a size worth tapping they do not all fit otherwise.
+Rect settings_top_rect() { return {8, 28, 312, 60}; }
+Rect settings_theme_rect() { return {8, 28, 170, 60}; }
+Rect settings_bright_minus_rect() { return {180, 30, 214, 58}; }
+Rect settings_bright_plus_rect() { return {270, 30, 304, 58}; }
+
+Rect settings_group_rect(int index, int n_groups) {
+  if (index < 0 || index >= n_groups || n_groups <= 0 || n_groups > MAX_GROUPS) return Rect{};
+  constexpr int X0 = 8, X1 = 312, GAP = 4;
+  const int w = (X1 - X0 - GAP * (n_groups - 1)) / n_groups;
+  const int x = X0 + index * (w + GAP);
+  return {x, 76, x + w, 104};
+}
 
 Rect settings_lane_rect(int index) {
   if (index < 0 || index >= MAX_WATCHES) return Rect{};
-  const int y0 = 108 + index * 31;
+  const int y0 = 120 + index * 30;
   return {8, y0, 312, y0 + 28};
 }
 
@@ -76,6 +90,19 @@ void settings_ui_touch(bool down_edge, int x, int y, int n_lanes, uint32_t now_m
   if (rect_contains(settings_bright_plus_rect(), x, y)) {
     const uint8_t b = config_brightness();
     config_set_brightness(b > 255 - BRIGHT_STEP ? 255 : static_cast<uint8_t>(b + BRIGHT_STEP));
+    return;
+  }
+
+  const int n_groups = config_n_groups();
+  for (int i = 0; i < n_groups; i++) {
+    if (!rect_contains(settings_group_rect(i, n_groups), x, y)) continue;
+    // Tapping the group already active does nothing - config.cpp refuses it -
+    // so a stray tap on the highlighted chip cannot cost a reboot.
+    if (config_set_active_group(static_cast<uint8_t>(i))) {
+      Serial.printf("settings: active group -> %s, restarting\n", config_group_name(i));
+      Serial.flush();
+      ESP.restart();  // the new group's stops arrive via config_begin()
+    }
     return;
   }
 
