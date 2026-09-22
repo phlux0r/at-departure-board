@@ -77,14 +77,14 @@ bool is_valid_permutation(const uint8_t* order, uint8_t n) {
 
 void seed_from_compiled_defaults() {
   Config c{};
-  strncpy(c.location, LOCATION, sizeof c.location - 1);
   c.theme = 0;
 
   // One group, holding what watch_config.h declares. More groups are made on
   // the setup page; there is no point compiling in a second arrangement of
-  // stops nobody has chosen yet.
+  // stops nobody has chosen yet. Its name is what the panel captions itself
+  // with, which is why LOCATION seeds it.
   CfgGroup& g = c.groups[0];
-  strncpy(g.name, "Main", sizeof g.name - 1);
+  strncpy(g.name, LOCATION, sizeof g.name - 1);
   g.n_watches = 0;
   for (int i = 0; i < N_WATCHES && i < MAX_WATCHES; i++) {
     CfgWatch& d = g.watches[g.n_watches];
@@ -102,7 +102,7 @@ void seed_from_compiled_defaults() {
   // Route the compiled defaults through the same validator the JSON path
   // uses. This cannot catch a field already truncated by strncpy above (that
   // information is gone by now), but it does catch an empty stop_code, zero
-  // enabled watches, and a too-long location - the achievable part of
+  // enabled watches, and a missing group name - the achievable part of
   // reject-don't-truncate for a path that itself only truncates.
   char* json = g_json_ui;
   Config scratch{};
@@ -181,9 +181,10 @@ void config_begin() {
     }
   }
   for (uint8_t i = 0; i < MAX_WATCHES; i++) g_visible[i] = true;  // everything published is shown
-  Serial.printf("config: %s, %u watches, theme %u (%s)\n", g_cfg.location,
-                static_cast<unsigned>(g_n_pub), static_cast<unsigned>(g_theme),
-                loaded ? "nvs" : "compiled defaults");
+  Serial.printf("config: %s, %u watches, theme %u, group %u of %u (%s)\n",
+                config_location(), static_cast<unsigned>(g_n_pub),
+                static_cast<unsigned>(g_theme), static_cast<unsigned>(g_cfg.active_group + 1),
+                static_cast<unsigned>(g_cfg.n_groups), loaded ? "nvs" : "compiled defaults");
 
   // Order is loaded separately from - and after - the watches themselves,
   // since it's only meaningful once g_n_pub is known: a stored order for a
@@ -214,7 +215,11 @@ void config_begin() {
 
 const WatchConfig* config_watches() { return g_pub; }
 uint8_t config_n_watches() { return g_n_pub; }
-const char* config_location() { return g_cfg.location; }
+const char* config_location() {
+  // The active group's name is the panel's label; there is no separate
+  // location any more (config.h).
+  return g_cfg.active_group < g_cfg.n_groups ? g_cfg.groups[g_cfg.active_group].name : "";
+}
 uint8_t config_theme() { return g_theme; }
 
 const uint8_t* config_lane_order() { return g_order; }

@@ -81,9 +81,10 @@ pio run -e esp32 -t upload --upload-port COM8      # /dev/ttyUSB0 on Linux
 ## Point it at your own stops
 
 Once the board is on your WiFi, **open `http://<board-ip>/` in a browser** on the
-same network. The setup page holds the location name, the theme, and up to four
-watches. Save and restart writes them to NVS and reboots the board, which takes
-a couple of seconds.
+same network. The setup page holds the theme, up to four named **groups**, and
+up to four watches in each. Exactly one group is active — the one the board
+fetches and shows, and whose name captions the panel. Save and restart writes
+them to NVS and reboots the board, which takes a couple of seconds.
 
 The board prints its IP to the serial monitor at boot (`pio device monitor`),
 and it is also the new ESP32 client in your router's device list:

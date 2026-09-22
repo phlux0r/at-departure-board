@@ -10,8 +10,11 @@
 
 constexpr int CFG_LOCATION_CAP = 24;  // matches Board::location
 constexpr int CFG_FIELD_CAP = 32;
-constexpr int CFG_GROUP_NAME_CAP = 24;
 constexpr int MAX_GROUPS = 4;
+
+// The active group's name IS the label drawn on the panel - there is no
+// separate location any more - so it has to fit where that label goes.
+constexpr int CFG_GROUP_NAME_CAP = CFG_LOCATION_CAP;
 
 // Four groups of four watches with every field at its cap serialise to about
 // 3.7 KB. Deliberately well clear of that - and note the stored document is an
@@ -36,6 +39,10 @@ struct CfgWatch {
 // A named set of watches. Exactly one group is active at a time - the board
 // only ever fetches and draws that one - so the rest are saved arrangements
 // to switch between, not extra lanes.
+//
+// The name doubles as the panel's label. An empty one is filled in on parse
+// rather than rejected - see cfg_parse - because the same parse reads what
+// NVS holds at boot, and a blank caption is not worth losing a config over.
 struct CfgGroup {
   char name[CFG_GROUP_NAME_CAP];
   uint8_t n_watches;  // every watch in the group, enabled or not
@@ -44,7 +51,6 @@ struct CfgGroup {
 
 // Plain data - no pointers into itself, so this is safe to copy.
 struct Config {
-  char location[CFG_LOCATION_CAP];
   uint8_t theme;
   uint8_t n_groups;
   uint8_t active_group;  // always < n_groups; clamped on parse, never rejected
@@ -59,7 +65,6 @@ enum class CfgError : uint8_t {
   NoWatches,        // a group with zero watches, or zero enabled ones
   MissingStopCode,  // a watch with an empty stop_code
   FieldTooLong,     // a string that will not fit its buffer
-  LocationTooLong,
   TooManyGroups,    // more than MAX_GROUPS
   NoGroups,         // zero groups
   GroupNameTooLong,

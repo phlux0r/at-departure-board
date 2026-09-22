@@ -31,12 +31,11 @@ const char PORTAL_PAGE[] PROGMEM = R"HTML(<!doctype html>
 <h1>Departure board setup</h1>
 
 <fieldset><legend>Board</legend>
- <label for="loc">Location shown on the panel</label>
- <input type="text" id="loc" maxlength="23">
  <label for="theme">Theme</label>
  <select id="theme"></select>
  <p class="note">The theme changes on the panel straight away. Everything else
-  applies when you save, which restarts the board.</p>
+  applies when you save, which restarts the board. The panel's caption is the
+  active group's name, set below.</p>
 </fieldset>
 
 <fieldset><legend>Groups</legend>
@@ -44,9 +43,10 @@ const char PORTAL_PAGE[] PROGMEM = R"HTML(<!doctype html>
  <button type="button" id="addgroup">Add group</button>
  <p class="note">A group is a saved set of watches &mdash; a weekday commute, a
   weekend one. Maximum four. <b>Active</b> is the one the board fetches and
-  shows; only one can be active at a time, and you can also switch it from the
-  cog on the panel. <b>Edit</b> picks which group's watches you are editing
-  below, which does not have to be the active one.</p>
+  shows, and its name is the caption on the panel; only one can be active at a
+  time, and you can also switch it from the cog on the panel. <b>Edit</b> picks
+  which group's watches you are editing below, which does not have to be the
+  active one.</p>
 </fieldset>
 
 <fieldset><legend>Watches in <span id="editing-name"></span></legend>
@@ -107,7 +107,7 @@ function renderGroups() {
 
     const nameBox = document.createElement('div');
     const nameLabel = document.createElement('label');
-    nameLabel.textContent = 'Name';
+    nameLabel.textContent = 'Group name / board label';
     const name = document.createElement('input');
     name.type = 'text';
     name.maxLength = 23;
@@ -229,7 +229,6 @@ async function check(id) {
 
 async function load() {
   const cfg = await (await fetch('/api/config')).json();
-  $('#loc').value = cfg.location;
   groups = (cfg.groups || []).map(g => ({
     name: g.name,
     // The client-only id keeps a row's check result attached to it across
@@ -285,6 +284,17 @@ $('#save').onclick = async () => {
   // The board rejects a group with nothing switched on, but its error cannot
   // say which group - so catch it here, where the group has a name, rather
   // than bouncing back something the page cannot point at.
+  const unnamed = groups.findIndex(g => !(g.name || '').trim());
+  if (unnamed >= 0) {
+    s.textContent = 'group ' + (unnamed + 1) +
+                    ' needs a name - it is what the panel is captioned with';
+    s.className = 'bad';
+    editing = unnamed;
+    renderGroups();
+    render();
+    return;
+  }
+
   const empty = groups.findIndex(g => !g.watches.some(w => w.enabled && w.stop_code));
   if (empty >= 0) {
     s.textContent = '"' + (groups[empty].name || 'group ' + (empty + 1)) +
@@ -297,8 +307,7 @@ $('#save').onclick = async () => {
   }
 
   const body = JSON.stringify({
-    v: 2, location: $('#loc').value, theme: Number($('#theme').value),
-    active_group: activeGroup,
+    v: 2, theme: Number($('#theme').value), active_group: activeGroup,
     // Drop the client-only "id" used to track rows across re-renders; the
     // board's schema only knows the five watch fields below.
     groups: groups.map(g => ({

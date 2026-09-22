@@ -12,6 +12,11 @@ void config_begin();  // call once in setup(), before fetcher_begin()
 
 const WatchConfig* config_watches();
 uint8_t config_n_watches();
+
+// The label drawn on the panel, which is the ACTIVE GROUP's name - groups
+// replaced the board-wide location, since every group already needed one and
+// two names for the same caption is one too many. Still called "location"
+// because that is the Board field it fills.
 const char* config_location();
 
 uint8_t config_theme();

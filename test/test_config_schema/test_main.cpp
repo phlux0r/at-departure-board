@@ -18,7 +18,7 @@ const char* V1 =
     "\"route_short_name\":\"\",\"toward_stop_code\":\"133\",\"enabled\":false}]}";
 
 const char* GOOD =
-    "{\"v\":2,\"location\":\"Kingsland\",\"theme\":1,\"active_group\":1,\"groups\":["
+    "{\"v\":2,\"theme\":1,\"active_group\":1,\"groups\":["
     "{\"name\":\"Weekday\",\"watches\":["
     "{\"label\":\"to Wynyard Quarter\",\"stop_code\":\"8213\","
     "\"route_short_name\":\"20\",\"toward_stop_code\":\"1060\",\"enabled\":true},"
@@ -31,7 +31,7 @@ const char* GOOD =
 // A one-group document, filled in by the caller.
 int one_group(char* out, size_t cap, const char* watches) {
   return snprintf(out, cap,
-                  "{\"v\":2,\"location\":\"X\",\"theme\":0,\"active_group\":0,"
+                  "{\"v\":2,\"theme\":0,\"active_group\":0,"
                   "\"groups\":[{\"name\":\"g\",\"watches\":[%s]}]}",
                   watches);
 }
@@ -44,7 +44,6 @@ const char* ONE_WATCH =
 void test_parses_a_good_document() {
   Config c{};
   TEST_ASSERT_TRUE(cfg_parse(GOOD, &c, 2) == CfgError::Ok);
-  TEST_ASSERT_EQUAL_STRING("Kingsland", c.location);
   TEST_ASSERT_EQUAL_UINT8(1, c.theme);
   TEST_ASSERT_EQUAL_UINT8(2, c.n_groups);
   TEST_ASSERT_EQUAL_UINT8(1, c.active_group);
@@ -62,11 +61,12 @@ void test_v1_is_lifted_into_a_single_group() {
   // The migration that keeps an existing board's stops across the update.
   Config c{};
   TEST_ASSERT_TRUE(cfg_parse(V1, &c, 2) == CfgError::Ok);
-  TEST_ASSERT_EQUAL_STRING("Kingsland", c.location);
   TEST_ASSERT_EQUAL_UINT8(1, c.theme);
   TEST_ASSERT_EQUAL_UINT8(1, c.n_groups);
   TEST_ASSERT_EQUAL_UINT8(0, c.active_group);
-  TEST_ASSERT_TRUE(strlen(c.groups[0].name) > 0);  // named, whatever we call it
+  // v1's board-wide location becomes the group's name, so the panel keeps
+  // the caption it had before the update.
+  TEST_ASSERT_EQUAL_STRING("Kingsland", c.groups[0].name);
   TEST_ASSERT_EQUAL_UINT8(2, c.groups[0].n_watches);
   TEST_ASSERT_EQUAL_STRING("8213", c.groups[0].watches[0].stop_code);
   TEST_ASSERT_EQUAL_STRING("122", c.groups[0].watches[1].stop_code);
@@ -99,7 +99,7 @@ void test_theme_is_clamped_not_rejected() {
   Config c{};
   char j[CFG_JSON_CAP];
   snprintf(j, sizeof j,
-           "{\"v\":2,\"location\":\"X\",\"theme\":99,\"active_group\":0,"
+           "{\"v\":2,\"theme\":99,\"active_group\":0,"
            "\"groups\":[{\"name\":\"g\",\"watches\":[%s]}]}",
            ONE_WATCH);
   TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::Ok);
@@ -112,7 +112,7 @@ void test_active_group_is_clamped_not_rejected() {
   Config c{};
   char j[CFG_JSON_CAP];
   snprintf(j, sizeof j,
-           "{\"v\":2,\"location\":\"X\",\"theme\":0,\"active_group\":3,"
+           "{\"v\":2,\"theme\":0,\"active_group\":3,"
            "\"groups\":[{\"name\":\"g\",\"watches\":[%s]}]}",
            ONE_WATCH);
   TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::Ok);
@@ -123,11 +123,11 @@ void test_rejects_garbage_and_wrong_version() {
   Config c{};
   TEST_ASSERT_TRUE(cfg_parse("not json at all", &c, 2) == CfgError::BadJson);
   TEST_ASSERT_TRUE(cfg_parse("", &c, 2) == CfgError::BadJson);
-  TEST_ASSERT_TRUE(cfg_parse("{\"v\":2,\"location\":\"X\"", &c, 2) == CfgError::BadJson);
+  TEST_ASSERT_TRUE(cfg_parse("{\"v\":2,\"theme\":0", &c, 2) == CfgError::BadJson);
   TEST_ASSERT_TRUE(
-      cfg_parse("{\"v\":3,\"location\":\"X\",\"groups\":[]}", &c, 2) == CfgError::BadVersion);
+      cfg_parse("{\"v\":3,\"groups\":[]}", &c, 2) == CfgError::BadVersion);
   TEST_ASSERT_TRUE(
-      cfg_parse("{\"location\":\"X\",\"groups\":[]}", &c, 2) == CfgError::BadVersion);
+      cfg_parse("{\"groups\":[]}", &c, 2) == CfgError::BadVersion);
 }
 
 void test_rejects_too_many_watches_in_a_group() {
@@ -146,7 +146,7 @@ void test_rejects_too_many_groups() {
   Config c{};
   char j[CFG_JSON_CAP];
   int p = snprintf(j, sizeof j,
-                   "{\"v\":2,\"location\":\"X\",\"theme\":0,\"active_group\":0,\"groups\":[");
+                   "{\"v\":2,\"theme\":0,\"active_group\":0,\"groups\":[");
   for (int i = 0; i < MAX_GROUPS + 1; i++) {
     p += snprintf(j + p, sizeof(j) - p, "%s{\"name\":\"g\",\"watches\":[%s]}", i ? "," : "",
                   ONE_WATCH);
@@ -158,7 +158,7 @@ void test_rejects_too_many_groups() {
 void test_rejects_no_groups() {
   Config c{};
   TEST_ASSERT_TRUE(
-      cfg_parse("{\"v\":2,\"location\":\"X\",\"theme\":0,\"groups\":[]}", &c, 2) ==
+      cfg_parse("{\"v\":2,\"theme\":0,\"groups\":[]}", &c, 2) ==
       CfgError::NoGroups);
 }
 
@@ -178,7 +178,7 @@ void test_every_group_needs_an_enabled_watch() {
 
   // A second group with everything off is rejected even though the first is fine.
   snprintf(j, sizeof j,
-           "{\"v\":2,\"location\":\"X\",\"theme\":0,\"active_group\":0,\"groups\":["
+           "{\"v\":2,\"theme\":0,\"active_group\":0,\"groups\":["
            "{\"name\":\"ok\",\"watches\":[%s]},{\"name\":\"bad\",\"watches\":[%s]}]}",
            ONE_WATCH, off);
   TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::NoWatches);
@@ -207,14 +207,6 @@ void test_rejects_overlong_fields() {
   one_group(j, sizeof j, w);
   TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::FieldTooLong);
 
-  char loc[CFG_LOCATION_CAP + 8];
-  memset(loc, 'y', sizeof loc);
-  loc[sizeof(loc) - 1] = '\0';
-  snprintf(j, sizeof j,
-           "{\"v\":2,\"location\":\"%s\",\"theme\":0,\"active_group\":0,"
-           "\"groups\":[{\"name\":\"g\",\"watches\":[%s]}]}",
-           loc, ONE_WATCH);
-  TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::LocationTooLong);
 }
 
 void test_rejects_an_overlong_group_name() {
@@ -224,10 +216,44 @@ void test_rejects_an_overlong_group_name() {
   name[sizeof(name) - 1] = '\0';
   char j[CFG_JSON_CAP];
   snprintf(j, sizeof j,
-           "{\"v\":2,\"location\":\"X\",\"theme\":0,\"active_group\":0,"
+           "{\"v\":2,\"theme\":0,\"active_group\":0,"
            "\"groups\":[{\"name\":\"%s\",\"watches\":[%s]}]}",
            name, ONE_WATCH);
   TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::GroupNameTooLong);
+}
+
+void test_a_nameless_group_is_named_not_rejected() {
+  // cfg_parse also reads what NVS holds at boot, so a blank caption must not
+  // cost someone every group they had.
+  Config c{};
+  char j[CFG_JSON_CAP];
+  snprintf(j, sizeof j,
+           "{\"v\":2,\"theme\":0,\"active_group\":0,"
+           "\"groups\":[{\"name\":\"\",\"watches\":[%s]}]}",
+           ONE_WATCH);
+  TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::Ok);
+  TEST_ASSERT_EQUAL_STRING("Group 1", c.groups[0].name);
+
+  // Absent entirely, not just empty, and in second place so the number counts.
+  snprintf(j, sizeof j,
+           "{\"v\":2,\"theme\":0,\"active_group\":0,\"groups\":["
+           "{\"name\":\"first\",\"watches\":[%s]},{\"watches\":[%s]}]}",
+           ONE_WATCH, ONE_WATCH);
+  TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::Ok);
+  TEST_ASSERT_EQUAL_STRING("first", c.groups[0].name);
+  TEST_ASSERT_EQUAL_STRING("Group 2", c.groups[1].name);
+}
+
+void test_v1_without_a_location_still_gets_a_name() {
+  // Nothing to inherit, so it falls back rather than migrating to a blank
+  // caption.
+  Config c{};
+  const char* j =
+      "{\"v\":1,\"theme\":0,\"watches\":["
+      "{\"label\":\"a\",\"stop_code\":\"1\",\"route_short_name\":\"\","
+      "\"toward_stop_code\":\"\",\"enabled\":true}]}";
+  TEST_ASSERT_TRUE(cfg_parse(j, &c, 2) == CfgError::Ok);
+  TEST_ASSERT_TRUE(strlen(c.groups[0].name) > 0);
 }
 
 void test_failed_parse_leaves_the_target_alone() {
@@ -235,7 +261,7 @@ void test_failed_parse_leaves_the_target_alone() {
   Config c{};
   TEST_ASSERT_TRUE(cfg_parse(GOOD, &c, 2) == CfgError::Ok);
   TEST_ASSERT_TRUE(cfg_parse("rubbish", &c, 2) == CfgError::BadJson);
-  TEST_ASSERT_EQUAL_STRING("Kingsland", c.location);
+  TEST_ASSERT_EQUAL_STRING("Weekday", c.groups[0].name);
   TEST_ASSERT_EQUAL_UINT8(2, c.n_groups);
 }
 
@@ -247,7 +273,6 @@ void test_every_error_has_text() {
                           CfgError::NoWatches,
                           CfgError::MissingStopCode,
                           CfgError::FieldTooLong,
-                          CfgError::LocationTooLong,
                           CfgError::TooManyGroups,
                           CfgError::NoGroups,
                           CfgError::GroupNameTooLong};
@@ -268,7 +293,6 @@ void test_round_trips_through_serialise() {
 
   Config b{};
   TEST_ASSERT_TRUE(cfg_parse(buf, &b, 2) == CfgError::Ok);
-  TEST_ASSERT_EQUAL_STRING(a.location, b.location);
   TEST_ASSERT_EQUAL_UINT8(a.theme, b.theme);
   TEST_ASSERT_EQUAL_UINT8(a.n_groups, b.n_groups);
   TEST_ASSERT_EQUAL_UINT8(a.active_group, b.active_group);
@@ -294,7 +318,6 @@ void test_a_full_config_fits_the_buffer_and_nvs() {
   // the 4000-byte ceiling nvs_set_str would impose - which is the whole
   // reason config.cpp stores this as a blob instead.
   Config c{};
-  memset(c.location, 'L', sizeof c.location - 1);
   c.theme = 255;
   c.n_groups = MAX_GROUPS;
   c.active_group = MAX_GROUPS - 1;
@@ -390,6 +413,8 @@ int main(int, char**) {
   RUN_TEST(test_rejects_missing_stop_code);
   RUN_TEST(test_rejects_overlong_fields);
   RUN_TEST(test_rejects_an_overlong_group_name);
+  RUN_TEST(test_a_nameless_group_is_named_not_rejected);
+  RUN_TEST(test_v1_without_a_location_still_gets_a_name);
   RUN_TEST(test_failed_parse_leaves_the_target_alone);
   RUN_TEST(test_every_error_has_text);
   RUN_TEST(test_round_trips_through_serialise);

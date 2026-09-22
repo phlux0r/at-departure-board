@@ -1,6 +1,7 @@
 #include "config_schema.h"
 
 #include <ArduinoJson.h>
+#include <stdio.h>
 #include <string.h>
 
 namespace {
@@ -24,7 +25,6 @@ const char* cfg_error_text(CfgError e) {
     case CfgError::NoWatches: return "at least one enabled watch is required";
     case CfgError::MissingStopCode: return "every watch needs a stop code";
     case CfgError::FieldTooLong: return "a watch field is too long";
-    case CfgError::LocationTooLong: return "the location name is too long";
     case CfgError::TooManyGroups: return "too many groups (maximum four)";
     case CfgError::NoGroups: return "at least one group is required";
     case CfgError::GroupNameTooLong: return "the group name is too long";
@@ -76,10 +76,6 @@ CfgError cfg_parse(const char* json, Config* out, uint8_t theme_max) {
   }
 
   Config c{};
-  if (!copy_field(c.location, sizeof c.location, doc["location"] | "")) {
-    return CfgError::LocationTooLong;
-  }
-
   const uint8_t t = doc["theme"] | 0;
   c.theme = (theme_max == 0 || t < theme_max) ? t : static_cast<uint8_t>(theme_max - 1);
 
@@ -89,7 +85,12 @@ CfgError cfg_parse(const char* json, Config* out, uint8_t theme_max) {
     // stops across the update; the name is what the web page will show for it.
     const CfgError e = parse_watches(doc["watches"].as<JsonArrayConst>(), &c.groups[0]);
     if (e != CfgError::Ok) return e;
-    copy_field(c.groups[0].name, sizeof c.groups[0].name, "Main");
+    // v1's board-wide "location" becomes the group's name, which is what the
+    // panel now labels itself with - so the caption survives the migration.
+    const char* was = doc["location"] | "";
+    if (!copy_field(c.groups[0].name, sizeof c.groups[0].name, was[0] ? was : "Main")) {
+      return CfgError::GroupNameTooLong;
+    }
     c.n_groups = 1;
     c.active_group = 0;
     *out = c;
@@ -103,6 +104,11 @@ CfgError cfg_parse(const char* json, Config* out, uint8_t theme_max) {
   for (JsonObjectConst g : gs) {
     CfgGroup& d = c.groups[c.n_groups];
     if (!copy_field(d.name, sizeof d.name, g["name"] | "")) return CfgError::GroupNameTooLong;
+    // Repaired, not rejected. This same function parses what NVS holds at
+    // boot, so refusing here would drop every group over a cosmetic blank -
+    // the same reasoning that clamps the theme and active_group below. The
+    // setup page still insists on a name, where saying so is useful.
+    if (d.name[0] == '\0') snprintf(d.name, sizeof d.name, "Group %u", c.n_groups + 1);
     const CfgError e = parse_watches(g["watches"].as<JsonArrayConst>(), &d);
     if (e != CfgError::Ok) return e;
     c.n_groups++;
@@ -124,7 +130,6 @@ size_t cfg_serialize(const Config& cfg, char* out, size_t cap) {
 
   JsonDocument doc;
   doc["v"] = CFG_SCHEMA_VERSION;  // always the current version; v1 is read-only
-  doc["location"] = cfg.location;
   doc["theme"] = cfg.theme;
   doc["active_group"] = cfg.active_group;
   JsonArray gs = doc["groups"].to<JsonArray>();

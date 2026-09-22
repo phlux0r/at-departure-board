@@ -256,8 +256,8 @@ fill in as the first fetch completes.
 
 Open `http://<board-ip>/` in a browser on the same network.
 
-The page has the location name shown on the panel, the theme, your **groups**,
-and the watches inside whichever group you're editing.
+The page has the theme, your **groups**, and the watches inside whichever
+group you're editing.
 
 A **group** is a saved set of watches — a weekday commute and a weekend one,
 say. You can have up to **four** groups of up to **four** watches each, and
@@ -272,7 +272,7 @@ starts with a single group and works exactly as it did before.
 |---|---|
 | **Edit** | Picks whose watches you're editing below. Doesn't change what the board is showing |
 | **Active** | Picks what the board fetches and shows. Takes effect on save, which restarts the board |
-| **Name** | What this group is called, here and in the cog menu on the panel. Up to 23 characters |
+| **Group name / board label** | What this group is called here and in the cog menu — and, when it's the active group, the caption the panel shows in its status bar. Up to 23 characters |
 | **Remove** | Deletes the group. The last one can't be removed — the board needs somewhere to point |
 
 Each watch is four fields:
@@ -285,9 +285,9 @@ Each watch is four fields:
 | **Toward stop** | The stop code of somewhere further along in the direction you travel |
 
 Then **Save and restart**. The board writes the config to flash and reboots;
-it's back in a couple of seconds. Every group needs at least one watch switched
-on with a stop code in it — the page will tell you which one is short before it
-tries to save.
+it's back in a couple of seconds. Every group needs a name and at least one
+watch switched on with a stop code in it — the page will tell you which one is
+short before it tries to save.
 
 ### Choosing the two tricky fields
 

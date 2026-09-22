@@ -10,6 +10,9 @@
 // through a line rename - see docs/at-api-notes.md on the CRL changeover.
 // toward_stop_code is the stop you are travelling toward, never a direction:
 // direction is derived at every refresh (spec 3a).
+// Names the group these watches go in, and with it the caption the panel
+// shows. Only used to seed a board whose NVS is empty; after that the setup
+// page owns it, and a group can be renamed there or from the panel's cog.
 static const char* const LOCATION = "Chatswood";
 
 static const WatchConfig WATCHES[] = {
