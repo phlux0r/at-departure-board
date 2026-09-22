@@ -457,6 +457,43 @@ recalibrating fixed the touch accuracy problem above; an earlier pass had
 them inset further out, to clear edges an inaccurate calibration couldn't
 reach.
 
+### The v2 config migration, confirmed 2026-09-22
+
+The board carried a v1 config in NVS when the grouped schema landed. On the
+first boot afterwards it logged `config: migrated to the grouped schema`,
+and on every boot since it logs `config: ... (nvs)` with no migration line -
+which is what says the blob write landed rather than the string being
+re-read and re-migrated each time. A watch added through the setup page
+afterwards survived a reboot, so the adapted page round-trips v2 as well.
+
+Worth knowing if this ever has to be debugged again: because
+`watch_config.h` holds the same stops as the saved config, a failed
+migration would have fallen back to compiled defaults and looked *identical*
+on the panel. `(nvs)` versus `(compiled defaults)` in the boot log is the
+only thing that tells them apart.
+
+### Live performance, measured 2026-09-22
+
+Three lanes, live data, WiFi and TLS up, on the S3:
+
+| Measurement | S3, live | Classic ESP32, for comparison |
+|---|---|---|
+| Draw time per frame | **68-72 ms** | 59 ms worst |
+| Frame rate | **14.0-14.6 fps** | 14.9-15.1 fps |
+| Lowest heap (min-ever) | **144,428** | 150,932 |
+| Largest contiguous block | 2,031,604 (PSRAM) | 94,196 |
+
+The S3 draws a frame *slower* than the classic board does, and enough to
+miss the 66 ms budget 15 fps needs - hence 14.x rather than 15.0. It is not
+visible on the glass and nothing was done about it, but it is worth knowing
+before anyone assumes the faster chip is faster at this: the renderer is
+bound by pushing 5 bands over SPI, not by the CPU, and the S3 gains nothing
+there.
+
+Heap holds up: the lowest reading is in the same place as the classic
+board's, and PSRAM leaves a 2 MB contiguous block spare that nothing yet
+uses.
+
 ### Touch UI: the settings page
 
 A cog left of the reorder toggle (`src/settings_ui.{h,cpp}`) opens a
@@ -507,10 +544,6 @@ demo scenes carry their own theme. Both work normally on the live build.
 
 ## Still to verify on hardware
 
-- Exact frame rate and heap headroom on the S3 under a real, sustained live
-  fetch - confirmed working end to end, but not measured against the
-  classic board's numbers the way "Memory" and "Display performance" above
-  do.
 - The WiFi-outage path: pull WiFi, expect `stale Nm` with the last good data
   kept, the lanes dimmed and the vehicles still animating, then recovery without a reboot when
   WiFi returns. This has **not** been performed on hardware. The code paths
