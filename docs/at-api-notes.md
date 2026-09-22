@@ -394,7 +394,11 @@ Of 1,737 vehicle entities, **925 (53%) carried `occupancy_status`**; 198 of
 | 5 | `FULL` | 2 | 0.2% |
 
 `4` (`CRUSHED_STANDING_ROOM_ONLY`), `6` (`NOT_ACCEPTING_PASSENGERS`), `7` and
-`8` did not appear at all. Two things follow for anything built on this:
+`8` did not appear at all. A second run half an hour later agreed closely —
+52% of vehicles, 58% of routes — so these proportions are stable, not a
+one-off.
+
+Two things follow for anything built on this:
 
 - **Half the vehicles have no value**, so a display has to have an honest
   "not reported" state. Showing "empty" for a missing value would be a lie of
@@ -403,6 +407,31 @@ Of 1,737 vehicle entities, **925 (53%) carried `occupancy_status`**; 198 of
   `MANY_SEATS_AVAILABLE`. The interesting end of the scale is barely
   exercised here; a peak-hour probe would say more about whether `3` and `5`
   are common enough to be worth drawing.
+
+### Per-route coverage is what decides it, and it is worse than the average
+
+The network figure hides a lot. The two routes this board actually watches:
+
+| Route | Vehicles reporting |
+|---|---|
+| `931-203` | 4 of 11 (36%) |
+| `97R-203` | 3 of 11 (27%) |
+
+About a third, against 53% network-wide — so check your own routes with
+`--route` before building anything on this, rather than trusting the
+headline number.
+
+Worse, that sample counts every vehicle *currently in service*. The board
+shows the next twenty minutes, and "Realtime only reports trips already in
+progress" below means a departure that has not left its origin yet has no
+vehicle to report occupancy for at all. So the figure for *the departures a
+lane actually displays* is lower again than a third — the second departure in
+a lane will almost never have it.
+
+Combined with 89% of reported values being `EMPTY` or `MANY_SEATS_AVAILABLE`,
+and `STANDING_ROOM_ONLY` or worse running at ~1.4% of reports across both
+runs, the information on offer for these stops is thin: an icon that is
+absent most of the time and says "not busy" when it appears.
 
 ### It has to be the filtered combined feed
 
