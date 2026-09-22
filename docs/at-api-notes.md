@@ -359,38 +359,64 @@ On hardware the board now logs, for stop 122:
 dirs 122: O-W-201/0 no  O-W-201/1 no  E-W-201/0 no  E-W-201/1 yes -> ok
 ```
 
-## Open: vehicle occupancy (the AT Mobile "people" icon)
+## Vehicle occupancy (the AT Mobile "people" icon) — probed 2026-09-22
 
 AT Mobile shows how full a bus or train is, as four people icons under Live
-Departures — *likely empty*, *likely space available*, *likely near the limit
-of safe distancing*, *likely not accepting passengers*. That is **vehicle**
-occupancy, not station crowding, and those four map onto GTFS-Realtime's
-`OccupancyStatus`.
+Departures. That is **vehicle** occupancy, not station crowding, and it is
+GTFS-Realtime's `OccupancyStatus`.
 
-`OccupancyStatus` rides on **VehiclePositions**, not TripUpdates — so it is
-in the entities the "Realtime" section above deliberately throws away. The
-combined feed carries them (12 entities against `/tripupdates`' 6 for the
-same query, 5,836 bytes against 3,202); whether a dedicated
-`/realtime/legacy/vehiclepositions` path exists is unknown, and not worth
-guessing given `/trip-updates` is a 404 while `/tripupdates` is not.
+It is real, and it is **only** in the combined feed. Probed unfiltered with
+`tools/probe_occupancy.py`:
 
-Unverified, and deliberately not assumed:
+| Path | Result |
+|---|---|
+| `/realtime/legacy/tripupdates` | 200, 1,126,537 b, 2,252 entities, **no occupancy anywhere** |
+| `/realtime/legacy/` | 200, 1,857,288 b, 4,128 entities, **925 with `occupancy_status`** |
+| `/realtime/legacy/vehiclepositions` | **404** |
+| `/realtime/legacy/vehicle-positions` | **404** |
 
-- whether AT populates `occupancy_status` at all (it is optional in the spec
-  and marked experimental, so being in the schema proves nothing),
-- which modes and routes carry it — trains, buses with passenger counters, or
-  a subset,
-- what it would cost the board in bytes and heap.
+So there is no dedicated vehicle-positions path to fetch cheaply — the
+combined feed is the only way to get it, and it is 1.65x the bytes of
+`/tripupdates` unfiltered. The combined feed's 4,128 entities are 2,252
+`trip_update`, 1,737 `vehicle` and 139 `alert`.
 
-`python tools/probe_occupancy.py` answers all three against the live API. It
-needs a key with the Realtime product, reads one from `AT_API_KEY` or
-`src/secrets.h`, and prints coverage by route. Record what it finds here.
+### Coverage is about half, and skewed quiet
 
-Worth noting the cost calculus has moved: skipping vehicle entities was
-decided for the classic ESP32, where the largest contiguous block was 114 KB.
-The S3 measures a 2 MB block and 144 KB of lowest heap
-(docs/hardware-notes.md), so the ~45% of extra bytes is affordable there in a
-way it was not when that call was made.
+Of 1,737 vehicle entities, **925 (53%) carried `occupancy_status`**; 198 of
+344 routes (58%) had it on at least one vehicle.
+
+| Value | | Count | Share of reported |
+|---|---|---|---|
+| 0 | `EMPTY` | 409 | 44% |
+| 1 | `MANY_SEATS_AVAILABLE` | 416 | 45% |
+| 2 | `FEW_SEATS_AVAILABLE` | 86 | 9% |
+| 3 | `STANDING_ROOM_ONLY` | 12 | 1% |
+| 5 | `FULL` | 2 | 0.2% |
+
+`4` (`CRUSHED_STANDING_ROOM_ONLY`), `6` (`NOT_ACCEPTING_PASSENGERS`), `7` and
+`8` did not appear at all. Two things follow for anything built on this:
+
+- **Half the vehicles have no value**, so a display has to have an honest
+  "not reported" state. Showing "empty" for a missing value would be a lie of
+  exactly the kind this board is built not to tell.
+- **This sample is an evening one** and 89% of reported values are `EMPTY` or
+  `MANY_SEATS_AVAILABLE`. The interesting end of the scale is barely
+  exercised here; a peak-hour probe would say more about whether `3` and `5`
+  are common enough to be worth drawing.
+
+### It has to be the filtered combined feed
+
+**Never fetch the combined feed unfiltered**: 1.86 MB, against the 766 KB
+that already made `?tripid=` load-bearing for the GTFS side. Filtered, the
+figures in "Realtime" above stand — 5,836 bytes against 3,202 for six trips,
+so occupancy roughly doubles the realtime response.
+
+Affordable on the S3 (2 MB contiguous block, 144 KB lowest heap), and a
+harder ask on the classic ESP32, whose largest block is 114 KB. It also means
+the ArduinoJson filter has to start accepting `vehicle` entities, which is
+what "Realtime" above rejects them for.
+
+Re-run any time with `python tools/probe_occupancy.py`.
 
 ## Realtime only reports trips already in progress
 

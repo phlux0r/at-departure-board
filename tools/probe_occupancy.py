@@ -159,6 +159,9 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--tripid", help="restrict to these trip ids (comma separated), "
                                      "as the board does; default is the whole feed")
+    ap.add_argument("--route", help="only report these routes (comma separated short "
+                                    "names or ids, e.g. 931,97R) - the full list is "
+                                    "truncated, and what matters is your own stops")
     ap.add_argument("--save", metavar="FILE", help="write the first response that "
                                                    "carries occupancy, as a fixture")
     args = ap.parse_args()
@@ -200,10 +203,26 @@ def main():
                 print(f"    {raw:<4} x{n:<5} {name}")
             with_occ = sum(1 for seen, _ in s["by_route"].values() if seen)
             print(f"  routes with occupancy: {with_occ} of {len(s['by_route'])}")
-            for route, (seen, total) in sorted(s["by_route"].items())[:15]:
-                print(f"    {route:<16} {seen}/{total}")
-            if len(s["by_route"]) > 15:
-                print(f"    ... {len(s['by_route']) - 15} more routes")
+
+            rows = sorted(s["by_route"].items())
+            if args.route:
+                # Match on the short name too: a route_id is "931-203", and the
+                # number on the front of the bus is what anyone actually knows.
+                wanted = [w.strip().lower() for w in args.route.split(",") if w.strip()]
+                rows = [(r, v) for r, v in rows
+                        if any(str(r).lower() == w or str(r).lower().startswith(w + "-")
+                               for w in wanted)]
+                missing = [w for w in wanted
+                           if not any(str(r).lower() == w or str(r).lower().startswith(w + "-")
+                                      for r, _ in rows)]
+                if missing:
+                    print(f"    (no vehicles running on: {', '.join(missing)})")
+            shown = rows if args.route else rows[:15]
+            for route, (seen, total) in shown:
+                mark = "none" if not seen else f"{seen}/{total}"
+                print(f"    {route:<16} {mark}")
+            if not args.route and len(rows) > 15:
+                print(f"    ... {len(rows) - 15} more routes (use --route to pick)")
             if args.save and not saved:
                 with open(args.save, "wb") as f:
                     f.write(body)
