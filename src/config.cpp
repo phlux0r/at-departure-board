@@ -4,6 +4,7 @@
 #include <Preferences.h>
 #include <string.h>
 
+#include "backlight.h"
 #include "theme.h"
 #include "watch_config.h"
 
@@ -16,10 +17,16 @@ constexpr char NVS_NS[] = "board";
 constexpr char NVS_KEY[] = "cfg";
 constexpr char NVS_ORDER_KEY[] = "order";  // separate key: never round-tripped
                                            // through cfg_parse/cfg_serialize
+constexpr char NVS_BRIGHT_KEY[] = "bright";
 
 Config g_cfg;
 WatchConfig g_pub[MAX_WATCHES];
 uint8_t g_n_pub = 0;
+
+// g_pub[i] came from g_cfg.watches[g_pub_src[i]]. cfg_publish() compacts the
+// enabled watches and doesn't report where each came from, so this mirrors its
+// loop - the two have to agree, or a lane toggle writes the wrong watch's bit.
+uint8_t g_pub_src[MAX_WATCHES] = {0, 1, 2, 3};
 
 // The one value written at runtime. A uint8_t store is atomic on this target,
 // which is the whole reason the theme may change without a reboot.
@@ -30,6 +37,15 @@ volatile uint8_t g_theme = 0;
 // ever writes it, and ui.cpp only ever reads a fully-written result because
 // config_set_lane_order() finishes the copy before returning.
 uint8_t g_order[MAX_WATCHES] = {0, 1, 2, 3};
+
+// Same reasoning as g_order: written only by the touch UI, at tap speed, and
+// read by the renderer. A hidden lane is still fetched - see config.h.
+bool g_visible[MAX_WATCHES] = {true, true, true, true};
+
+// Not in the Config schema, so no version bump and nothing for the web page
+// to round-trip. It can move there if brightness ever wants to be settable
+// from the browser too.
+volatile uint8_t g_brightness = 255;  // uint8_t store is atomic here, as theme
 
 Preferences g_prefs;
 
@@ -102,6 +118,13 @@ void config_begin() {
 
   g_theme = g_cfg.theme;
   g_n_pub = cfg_publish(g_cfg, g_pub);
+  {  // mirror cfg_publish's compaction to remember where each published watch came from
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < g_cfg.n_watches && n < MAX_WATCHES; i++) {
+      if (g_cfg.watches[i].enabled) g_pub_src[n++] = i;
+    }
+  }
+  for (uint8_t i = 0; i < MAX_WATCHES; i++) g_visible[i] = true;  // everything published is shown
   Serial.printf("config: %s, %u watches, theme %u (%s)\n", g_cfg.location,
                 static_cast<unsigned>(g_n_pub), static_cast<unsigned>(g_theme),
                 loaded ? "nvs" : "compiled defaults");
@@ -124,6 +147,13 @@ void config_begin() {
   if (!order_loaded) {
     for (uint8_t i = 0; i < MAX_WATCHES; i++) g_order[i] = i;
   }
+
+  if (g_prefs.begin(NVS_NS, true)) {  // read-only
+    g_brightness = g_prefs.getUChar(NVS_BRIGHT_KEY, 255);
+    g_prefs.end();
+  }
+  if (g_brightness < BRIGHTNESS_MIN) g_brightness = BRIGHTNESS_MIN;  // never stored dark
+  backlight_set(g_brightness);
 }
 
 const WatchConfig* config_watches() { return g_pub; }
@@ -132,6 +162,47 @@ const char* config_location() { return g_cfg.location; }
 uint8_t config_theme() { return g_theme; }
 
 const uint8_t* config_lane_order() { return g_order; }
+
+uint8_t config_brightness() { return g_brightness; }
+
+void config_set_brightness(uint8_t level) {
+  if (level < BRIGHTNESS_MIN) level = BRIGHTNESS_MIN;
+  g_brightness = level;  // live, atomic
+  backlight_set(level);
+  if (g_prefs.begin(NVS_NS, false)) {
+    g_prefs.putUChar(NVS_BRIGHT_KEY, level);
+    g_prefs.end();
+  }
+}
+
+const bool* config_lane_visible() { return g_visible; }
+
+bool config_set_lane_visible(uint8_t index, bool visible) {
+  if (index >= g_n_pub) return false;
+  if (!visible) {
+    uint8_t shown = 0;
+    for (uint8_t i = 0; i < g_n_pub; i++) {
+      if (g_visible[i]) shown++;
+    }
+    if (shown <= 1 && g_visible[index]) return false;  // never hide the last lane
+  }
+  g_visible[index] = visible;  // live: the renderer picks this up next frame
+
+  // Persist as the watch's `enabled` bit, so the NEXT boot stops fetching it
+  // too. Serialised from a copy: g_cfg is what config_to_json() hands the
+  // portal on core 0, and g_pub is what the fetch task reads - neither is
+  // touched here, which is what makes this safe to do while both are running.
+  Config snapshot = g_cfg;
+  snapshot.theme = g_theme;
+  if (g_pub_src[index] < snapshot.n_watches) snapshot.watches[g_pub_src[index]].enabled = visible;
+  char json[CFG_JSON_CAP];
+  if (cfg_serialize(snapshot, json, sizeof json) == 0) return true;  // live change stands
+  if (g_prefs.begin(NVS_NS, false)) {
+    g_prefs.putString(NVS_KEY, json);
+    g_prefs.end();
+  }
+  return true;
+}
 
 void config_set_lane_order(const uint8_t order[MAX_WATCHES]) {
   if (!is_valid_permutation(order, g_n_pub)) return;

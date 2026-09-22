@@ -26,6 +26,24 @@ void config_set_theme(uint8_t t);  // applies live AND persists
 const uint8_t* config_lane_order();
 void config_set_lane_order(const uint8_t order[MAX_WATCHES]);  // applies live AND persists
 
+// Backlight level, 0-255. Applies live (backlight_set) and persists.
+// Never goes below BRIGHTNESS_MIN: a board dimmed to nothing looks broken, and
+// the only way back is the setting you can no longer read.
+constexpr uint8_t BRIGHTNESS_MIN = 25;
+uint8_t config_brightness();
+void config_set_brightness(uint8_t level);
+
+// Which published watches are currently drawn. visible()[i] refers to
+// config_watches()[i]. Hiding is a DISPLAY-level thing so it can happen live:
+// the fetch task keeps fetching a hidden watch (which is why re-showing one is
+// instant), and only the next boot drops it, when the persisted `enabled` bit
+// below feeds cfg_publish.
+//
+// Returns false, changing nothing, if this would hide the last visible lane -
+// a board showing no lanes at all is never what the tap meant.
+const bool* config_lane_visible();
+bool config_set_lane_visible(uint8_t index, bool visible);
+
 // Validates, then persists to NVS ONLY. The in-RAM config is deliberately not
 // updated: the caller reboots so config_begin() picks the new values up at the
 // one moment nothing else is reading them.

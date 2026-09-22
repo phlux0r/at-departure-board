@@ -3,10 +3,12 @@
 #include <math.h>
 #include <stdio.h>
 
+#include "config.h"
 #include "layout.h"
 #include "painter.h"
 #include "reorder_ui.h"
 #include "rng.h"
+#include "settings_ui.h"
 #include "shapes.h"
 #include "sprite_table.h"
 #include "theme.h"
@@ -56,6 +58,20 @@ void reorder_toggle_icon(Painter& p, const Theme& th) {
   p.triangle(mid + 1, r.y0, r.x1, r.y0, (mid + 1 + r.x1) / 2, r.y1, colour);      // down, right
 }
 
+// A cog, left of the reorder toggle: a ring of teeth around a hollow centre,
+// at this size really just a suggestion of one.
+void settings_cog_icon(Painter& p, const Theme& th) {
+  const Rect r = settings_cog_rect();
+  const int cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+  const Rgb colour = settings_ui_active() ? th.colours[C_LIVE] : th.colours[C_DIM];
+  // Kept inside r: the rect is the hit zone, and an icon drawn past it would
+  // have edges that look tappable and aren't.
+  p.ellipse(cx - 4, cy - 4, cx + 4, cy + 4, colour);
+  p.rect(cx - 6, cy - 1, cx + 6, cy + 1, colour);  // teeth, left and right
+  p.rect(cx - 1, cy - 6, cx + 1, cy + 6, colour);  // teeth, top and bottom
+  p.ellipse(cx - 1, cy - 1, cx + 1, cy + 1, th.colours[C_PANEL]);  // the hole
+}
+
 // One chevron, filled if it exists at this slot (top has no up, bottom no
 // down - see reorder_lane_chevron).
 void reorder_lane_chevron_icon(Painter& p, int slot, int n, bool up, const Theme& th) {
@@ -65,6 +81,67 @@ void reorder_lane_chevron_icon(Painter& p, int slot, int n, bool up, const Theme
   const int mid_x = (r.x0 + r.x1) / 2;
   if (up) p.triangle(r.x0, r.y1, r.x1, r.y1, mid_x, r.y0, colour);
   else p.triangle(r.x0, r.y0, r.x1, r.y0, mid_x, r.y1, colour);
+}
+
+// A settings row: a card with a label on the left, drawn the same way for
+// every row so the page reads as one list.
+void settings_row(Painter& p, Rect r, const char* label, const Theme& th) {
+  p.rrect(r.x0, r.y0, r.x1, r.y1, 4, th.colours[C_PANEL]);
+  p.text(label, r.x0 + 10, (r.y0 + r.y1) / 2, ML_DATUM, FONT_SMALL, th.colours[C_DIM]);
+}
+
+// The whole settings page, drawn over the board rather than beside it: at
+// 320x240 there is no room for both, and the board is still there when the
+// page closes.
+void settings_page(Painter& p, const Board& b, const Theme& th) {
+  p.text("Settings", 10, 13, ML_DATUM, FONT_BADGE, th.colours[C_TEXT]);
+  const Rect x = settings_close_rect();
+  p.rrect(x.x0, x.y0, x.x1, x.y1, 4, th.colours[C_PANEL]);
+  p.text("X", (x.x0 + x.x1) / 2, (x.y0 + x.y1) / 2, MC_DATUM, FONT_SMALL, th.colours[C_TEXT]);
+
+  const Rect tr = settings_theme_rect();
+  settings_row(p, tr, "Theme", th);
+  p.text(theme(config_theme()).name, tr.x1 - 10, (tr.y0 + tr.y1) / 2, MR_DATUM, FONT_BADGE,
+         th.colours[C_LIVE]);
+
+  const Rect br = settings_bright_rect();
+  settings_row(p, br, "Brightness", th);
+  char pct[8];
+  snprintf(pct, sizeof pct, "%d%%", (config_brightness() * 100 + 127) / 255);
+  p.text(pct, 244, (br.y0 + br.y1) / 2, MC_DATUM, FONT_BADGE, th.colours[C_TEXT]);
+  const Rect minus = settings_bright_minus_rect(), plus = settings_bright_plus_rect();
+  p.rrect(minus.x0, minus.y0, minus.x1, minus.y1, 4, th.colours[C_PANEL_HI]);
+  p.rrect(plus.x0, plus.y0, plus.x1, plus.y1, 4, th.colours[C_PANEL_HI]);
+  p.text("-", (minus.x0 + minus.x1) / 2, (minus.y0 + minus.y1) / 2, MC_DATUM, FONT_BADGE,
+         th.colours[C_TEXT]);
+  p.text("+", (plus.x0 + plus.x1) / 2, (plus.y0 + plus.y1) / 2, MC_DATUM, FONT_BADGE,
+         th.colours[C_TEXT]);
+
+  int n = config_n_watches();
+  if (n > b.n_watches) n = b.n_watches;  // the board is what has labels to show
+  if (n == 0) {
+    // DEMO_MODE, where config_begin() never runs and there are no watches to
+    // switch. Theme and brightness above still work.
+    p.text("No watches configured", 10, 112, TL_DATUM, FONT_SMALL, th.colours[C_DIM]);
+    return;
+  }
+
+  p.text("Lanes", 10, 100, ML_DATUM, FONT_SMALL, th.colours[C_DIM]);
+  const bool* visible = config_lane_visible();
+  for (int i = 0; i < n && i < MAX_WATCHES; i++) {
+    const Rect r = settings_lane_rect(i);
+    if (r.x1 <= r.x0) break;
+    char label[48];
+    snprintf(label, sizeof label, "%s %s", b.watches[i].badge, b.watches[i].headsign);
+    settings_row(p, r, label, th);
+
+    // The state, as a word rather than a tick: at 6x8 a tick is a smudge.
+    const bool on = visible[i];
+    const Rect box = {r.x1 - 44, r.y0 + 4, r.x1 - 6, r.y1 - 4};
+    p.rrect(box.x0, box.y0, box.x1, box.y1, 4, on ? th.colours[C_LIVE] : th.colours[C_PANEL_HI]);
+    p.text(on ? "on" : "off", (box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2, MC_DATUM, FONT_SMALL,
+           on ? th.colours[C_DARK] : th.colours[C_DIM]);
+  }
 }
 
 void times(Painter& p, const Lane& ln, const Watch& w, const Theme& th) {
@@ -232,30 +309,69 @@ void Ui::draw(const Board& b, uint32_t ms, bool touch_down_edge, int touch_x, in
   const Theme& th = theme(b.theme);
   const float t = (ms % BOB_FOLD_MS) / 1000.0f;
   const int n = b.n_watches < MAX_WATCHES ? b.n_watches : MAX_WATCHES;
-  const SizeClass size = size_class(n);
 
-  reorder_ui_touch(touch_down_edge, touch_x, touch_y, n, ms);
-  reorder_ui_tick(ms);
+  // Which watch each on-screen lane shows, and where in order() it came from.
+  // order() is a permutation of every published watch; hidden ones (config.h)
+  // are skipped here rather than removed from it, so hiding and re-showing a
+  // lane can't lose the arrangement.
   const uint8_t* order = reorder_ui_order();
+  const bool* visible = config_lane_visible();
+  uint8_t slot_watch[MAX_WATCHES], slot_to_order[MAX_WATCHES];
+  int n_slots = 0;
+  for (int i = 0; i < MAX_WATCHES && n_slots < MAX_WATCHES; i++) {
+    const uint8_t w = order[i];
+    if (w >= n) continue;       // order() can outlive a shrunken watch list
+    if (!visible[w]) continue;  // hidden: still fetched, just not drawn
+    slot_watch[n_slots] = w;
+    slot_to_order[n_slots] = static_cast<uint8_t>(i);
+    n_slots++;
+  }
+  if (n_slots == 0) {  // nothing visible (shouldn't happen - config.cpp refuses)
+    for (int i = 0; i < n; i++) {
+      slot_watch[i] = static_cast<uint8_t>(i);
+      slot_to_order[i] = static_cast<uint8_t>(i);
+    }
+    n_slots = n;
+  }
+  const SizeClass size = size_class(n_slots);
+
+  // Settings first: it can close reorder mode, and it swallows the tap that
+  // opened it so nothing underneath sees it too.
+  settings_ui_touch(touch_down_edge, touch_x, touch_y, config_n_watches(), ms);
+  settings_ui_tick(ms);
+  const bool in_settings = settings_ui_active();
+  if (!in_settings) {
+    reorder_ui_touch(touch_down_edge, touch_x, touch_y, slot_to_order, n_slots, ms);
+    reorder_ui_tick(ms);
+  }
   const bool reordering = reorder_ui_active();
+
   for (int oy = 0; oy < H; oy += BAND_H) {
     Painter p{band_, oy, b.dimmed};
     band_.fillSprite(p.c(th.colours[C_BG]));
-    // Status bar (and its toggle) before the lanes: it sits entirely within
+
+    if (in_settings) {
+      settings_page(p, b, th);
+      band_.pushSprite(0, oy);
+      continue;
+    }
+
+    // Status bar (and its icons) before the lanes: it sits entirely within
     // y:0-18, above where any lane's card starts (y0+3=21 at the nearest),
     // so draw order between the two doesn't matter here - this is just the
     // more natural header-first order.
     if (oy <= STATUS_H) {
       status_bar(p, b, th);
+      settings_cog_icon(p, th);
       reorder_toggle_icon(p, th);
     }
-    for (int i = 0; i < n; i++) {
-      const Lane ln = lane(i, n);
+    for (int i = 0; i < n_slots; i++) {
+      const Lane ln = lane(i, n_slots);
       if (ln.rect.y1 < oy || ln.rect.y0 >= oy + BAND_H) continue;  // not in this band
-      draw_lane(p, ln, b.watches[order[i]], t, i, th, b.theme, size);
+      draw_lane(p, ln, b.watches[slot_watch[i]], t, i, th, b.theme, size);
       if (reordering) {
-        reorder_lane_chevron_icon(p, i, n, true, th);
-        reorder_lane_chevron_icon(p, i, n, false, th);
+        reorder_lane_chevron_icon(p, i, n_slots, true, th);
+        reorder_lane_chevron_icon(p, i, n_slots, false, th);
       }
     }
     band_.pushSprite(0, oy);

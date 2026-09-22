@@ -305,6 +305,20 @@ changing networks means editing `src/secrets.h` and re-flashing (step 7). The
 stops and theme survive a re-flash — they live in NVS, not in the firmware
 image.
 
+### The settings page (ESP32-S3 build only)
+
+Tap the cog in the status bar for a page with the theme, the backlight
+brightness, and an on/off row per lane. All three apply immediately and are
+remembered across reboots. The page closes on the **X**, on the cog again, or
+on its own after about 30 seconds.
+
+Switching a lane off here hides it straight away and stops the board fetching
+it from the next boot — so switching it back on shows its departures
+immediately, rather than waiting for a fresh lookup. It won't let you hide the
+last remaining lane. (The **On** checkbox on the web setup page is the same
+setting seen from the other end: that one controls what gets fetched, and
+takes effect on save-and-restart.)
+
 ### Reordering lanes by touch (ESP32-S3 build only)
 
 Tap the small chevron in the status bar to reveal up/down chevrons at each

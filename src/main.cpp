@@ -8,6 +8,7 @@
 
 #include "backlight.h"
 #include "reorder_ui.h"
+#include "settings_ui.h"
 #include "touch.h"
 #include "ui.h"
 
@@ -139,6 +140,7 @@ void setup() {
   // up config.cpp's compiled-in identity default there instead - reorder
   // still works in the demo, it just never persists across boots.
   reorder_ui_begin();
+  settings_ui_begin();
 }
 
 void loop() {

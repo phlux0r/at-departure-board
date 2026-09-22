@@ -53,7 +53,8 @@ Rect reorder_lane_chevron(int slot, int n, bool up) {
   return up ? Rect{x1 - 14, up_y0, x1, up_y1} : Rect{x1 - 14, down_y0, x1, down_y1};
 }
 
-void reorder_ui_touch(bool down_edge, int x, int y, int n, uint32_t now_ms) {
+void reorder_ui_touch(bool down_edge, int x, int y, const uint8_t* slot_to_order, int n_slots,
+                      uint32_t now_ms) {
   if (!down_edge) return;  // act on the press edge only
   g_last_touch_ms = now_ms;
 
@@ -63,18 +64,24 @@ void reorder_ui_touch(bool down_edge, int x, int y, int n, uint32_t now_ms) {
   }
   if (!g_active) return;
 
-  for (int slot = 0; slot < n; slot++) {
-    int other;
-    if (rect_contains(reorder_lane_chevron(slot, n, true), x, y)) {
-      other = slot - 1;
-    } else if (rect_contains(reorder_lane_chevron(slot, n, false), x, y)) {
-      other = slot + 1;
+  for (int slot = 0; slot < n_slots; slot++) {
+    int other_slot;
+    if (rect_contains(reorder_lane_chevron(slot, n_slots, true), x, y)) {
+      other_slot = slot - 1;
+    } else if (rect_contains(reorder_lane_chevron(slot, n_slots, false), x, y)) {
+      other_slot = slot + 1;
     } else {
       continue;
     }
-    const uint8_t tmp = g_order[slot];
-    g_order[slot] = g_order[other];
-    g_order[other] = tmp;
+    if (other_slot < 0 || other_slot >= n_slots) break;  // top has no up, bottom no down
+
+    // Swap where these two lanes sit in order(), not where they sit on
+    // screen: with a lane hidden the two aren't the same index.
+    const uint8_t a = slot_to_order[slot];
+    const uint8_t b = slot_to_order[other_slot];
+    const uint8_t tmp = g_order[a];
+    g_order[a] = g_order[b];
+    g_order[b] = tmp;
     config_set_lane_order(g_order);  // live + persisted, same pattern as the theme
     break;
   }
@@ -85,4 +92,5 @@ void reorder_ui_tick(uint32_t now_ms) {
 }
 
 bool reorder_ui_active() { return g_active; }
+void reorder_ui_close() { g_active = false; }
 const uint8_t* reorder_ui_order() { return g_order; }

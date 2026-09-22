@@ -457,11 +457,53 @@ recalibrating fixed the touch accuracy problem above; an earlier pass had
 them inset further out, to clear edges an inaccurate calibration couldn't
 reach.
 
+### Touch UI: the settings page
+
+A cog left of the reorder toggle (`src/settings_ui.{h,cpp}`) opens a
+full-screen page over the board with three things on it:
+
+- **Theme** — taps cycle it, live, as the web page's theme select already did.
+- **Brightness** — `-`/`+` in ~10% steps. This is the first thing that ever
+  actually drives `backlight_set()` with anything but 255, so the LEDC dimming
+  path the design always assumed is finally exercised. Clamped at
+  `BRIGHTNESS_MIN`: a board dimmed to nothing looks broken, and the only way
+  back is a setting you can no longer read.
+- **Lanes** — an on/off row per published watch.
+
+The lane toggle is a *display*-level hide, which is what lets it be instant.
+The fetch task keeps fetching a hidden watch, so switching one back on shows
+its departures immediately instead of waiting out a fresh resolve; only the
+next boot actually drops it, when the persisted `enabled` bit feeds
+`cfg_publish()` as it always has. The web page's "On" checkbox is the same
+bit seen from the other end — it's what gets *fetched*, and still wants the
+usual save-and-reboot. `config_set_lane_visible()` refuses to hide the last
+visible lane, and serialises from a copy of the config rather than mutating
+`g_cfg`, so neither the portal on core 0 nor the fetch task sees anything
+change under them.
+
+Hiding a lane changes how many lanes are on screen, so it also changes the
+lane geometry and the size class — and `config_lane_order()` is a permutation
+over *every* published watch, hidden ones included. `Ui::draw()` therefore
+builds a slot list each frame (which watch each visible lane shows, and where
+in `order()` it came from) and hands `reorder_ui_touch()` that mapping, so a
+swap moves entries at the right indices rather than at screen slots. Without
+that, hiding a lane would quietly reshuffle the ones still showing.
+
+Brightness lives in its own NVS key (`board`/`bright`) rather than the Config
+schema — no schema version bump, nothing for the web page to round-trip. It
+can move into the schema whenever brightness wants to be settable from the
+browser too.
+
+Two things about DEMO_MODE, which never calls `config_begin()`: the settings
+page's Lanes section is empty there (no watches configured), and cycling the
+theme changes the page's own reading of it but not the board behind it, since
+demo scenes carry their own theme. Both work normally on the live build.
+
 ## Still to verify on hardware
 
-- PWM dimming driven by the app (the LEDC path itself is verified, on both
-  boards - `backlight_set()` is only ever called with 255, never anything
-  that would actually dim it).
+- PWM dimming driven by the app: the settings page's brightness control is
+  the first thing to call `backlight_set()` with anything but 255, and it
+  has not been run on hardware yet.
 - Exact frame rate and heap headroom on the S3 under a real, sustained live
   fetch - confirmed working end to end, but not measured against the
   classic board's numbers the way "Memory" and "Display performance" above
