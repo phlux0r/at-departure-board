@@ -54,6 +54,10 @@ const char PORTAL_PAGE[] PROGMEM = R"HTML(<!doctype html>
 <script>
 const $ = s => document.querySelector(s);
 let watches = [];
+// The last document the board sent, so a save can rebuild it with only the
+// active group's watches replaced. The groups UI is not built yet; until it
+// is, this page edits the active group and leaves the others untouched.
+let loaded = null;
 let checking = false;  // true while a /api/stop request is in flight
 let nextWatchId = 1;  // stable per-row id, since array indexes shift on removal
 
@@ -130,8 +134,11 @@ async function check(id) {
 
 async function load() {
   const cfg = await (await fetch('/api/config')).json();
+  // Kept whole so save can put back the groups this page does not edit yet.
+  loaded = cfg;
   $('#loc').value = cfg.location;
-  watches = cfg.watches.map(w => Object.assign({id: nextWatchId++}, w));
+  const g = cfg.groups[cfg.active_group] || {watches: []};
+  watches = g.watches.map(w => Object.assign({id: nextWatchId++}, w));
   render();
   const t = await (await fetch('/api/themes')).json();
   const sel = $('#theme');
@@ -165,15 +172,19 @@ $('#save').onclick = async () => {
   const s = $('#status');
   s.textContent = 'saving…';
   s.className = '';
+  // Drop the client-only "id" used to track rows across re-renders; the
+  // board's schema only knows the five watch fields below.
+  const edited = watches.map(w => ({
+    label: w.label, stop_code: w.stop_code,
+    route_short_name: w.route_short_name, toward_stop_code: w.toward_stop_code,
+    enabled: w.enabled
+  }));
+  const groups = (loaded ? loaded.groups : []).map(
+    (g, i) => ({name: g.name, watches: i === loaded.active_group ? edited : g.watches}));
+  if (!groups.length) groups.push({name: 'Main', watches: edited});
   const body = JSON.stringify({
-    v: 1, location: $('#loc').value, theme: Number($('#theme').value),
-    // Drop the client-only "id" used to track rows across re-renders; the
-    // board's schema only knows the four watch fields below.
-    watches: watches.map(w => ({
-      label: w.label, stop_code: w.stop_code,
-      route_short_name: w.route_short_name, toward_stop_code: w.toward_stop_code,
-      enabled: w.enabled
-    }))
+    v: 2, location: $('#loc').value, theme: Number($('#theme').value),
+    active_group: loaded ? loaded.active_group : 0, groups: groups
   });
   let r, j;
   try { r = await fetch('/api/config', {method: 'POST', body: body}); j = await r.json(); }

@@ -48,7 +48,10 @@ void handle_root() {
 }
 
 void handle_config() {
-  char json[CFG_JSON_CAP];
+  // static: a Config document is ~4.6 KB at its cap, too much to put on this
+  // task's stack. Safe because every handler runs on the portal task, one at
+  // a time (portal_task below).
+  static char json[CFG_JSON_CAP];
   if (config_to_json(json, sizeof json) == 0) {
     g_server.send(500, "application/json", "{\"error\":\"could not serialise config\"}");
     return;

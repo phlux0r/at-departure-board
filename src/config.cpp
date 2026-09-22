@@ -49,6 +49,23 @@ volatile uint8_t g_brightness = 255;  // uint8_t store is atomic here, as theme
 
 Preferences g_prefs;
 
+// A Config document is ~4.6 KB at its cap - far too much for any task stack
+// here (the loop task gets 8 KB), so serialisation uses these instead. One per
+// task that serialises, because the two run concurrently on different cores:
+// the touch UI writes theme and lane visibility from the loop task, and the
+// setup page writes from the portal task on core 0 (portal.cpp).
+char g_json_ui[CFG_JSON_CAP];      // loop task, and config_begin() before tasks exist
+char g_json_portal[CFG_JSON_CAP];  // portal task
+
+// Writes the document as an NVS *blob*. nvs_set_str caps a value at 4000
+// bytes and a full four-group config is ~3.7 KB, which is too close to live
+// with - see config_begin() for the migration off the old string form.
+void store_json(const char* json) {
+  if (!g_prefs.begin(NVS_NS, false)) return;
+  g_prefs.putBytes(NVS_KEY, json, strlen(json));
+  g_prefs.end();
+}
+
 bool is_valid_permutation(const uint8_t* order, uint8_t n) {
   bool seen[MAX_WATCHES] = {};
   for (uint8_t i = 0; i < n; i++) {
@@ -62,16 +79,24 @@ void seed_from_compiled_defaults() {
   Config c{};
   strncpy(c.location, LOCATION, sizeof c.location - 1);
   c.theme = 0;
-  c.n_watches = 0;
+
+  // One group, holding what watch_config.h declares. More groups are made on
+  // the setup page; there is no point compiling in a second arrangement of
+  // stops nobody has chosen yet.
+  CfgGroup& g = c.groups[0];
+  strncpy(g.name, "Main", sizeof g.name - 1);
+  g.n_watches = 0;
   for (int i = 0; i < N_WATCHES && i < MAX_WATCHES; i++) {
-    CfgWatch& d = c.watches[c.n_watches];
+    CfgWatch& d = g.watches[g.n_watches];
     strncpy(d.label, WATCHES[i].label, sizeof d.label - 1);
     strncpy(d.stop_code, WATCHES[i].stop_code, sizeof d.stop_code - 1);
     strncpy(d.route_short_name, WATCHES[i].route_short_name, sizeof d.route_short_name - 1);
     strncpy(d.toward_stop_code, WATCHES[i].toward_stop_code, sizeof d.toward_stop_code - 1);
     d.enabled = true;
-    c.n_watches++;
+    g.n_watches++;
   }
+  c.n_groups = 1;
+  c.active_group = 0;
   g_cfg = c;
 
   // Route the compiled defaults through the same validator the JSON path
@@ -79,9 +104,9 @@ void seed_from_compiled_defaults() {
   // information is gone by now), but it does catch an empty stop_code, zero
   // enabled watches, and a too-long location - the achievable part of
   // reject-don't-truncate for a path that itself only truncates.
-  char json[CFG_JSON_CAP];
+  char* json = g_json_ui;
   Config scratch{};
-  if (cfg_serialize(g_cfg, json, sizeof json) == 0) {
+  if (cfg_serialize(g_cfg, json, CFG_JSON_CAP) == 0) {
     Serial.println(
         "config: watch_config.h defaults failed to serialise - "
         "watch_config.h is likely misconfigured");
@@ -99,13 +124,28 @@ void seed_from_compiled_defaults() {
 }  // namespace
 
 void config_begin() {
-  char json[CFG_JSON_CAP];
+  char* json = g_json_ui;  // runs before any task exists; see the buffers above
   json[0] = '\0';
 
-  bool loaded = false;
+  // The document is stored as a blob, not a string: nvs_set_str caps a value
+  // at 4000 bytes, and four full groups serialise to ~3.7 KB. Boards written
+  // by an older build still have it under the same key as a *string*, so fall
+  // back to reading one - see the migration below.
+  bool from_string_form = false;
   if (g_prefs.begin(NVS_NS, true)) {  // read-only
-    g_prefs.getString(NVS_KEY, json, sizeof json);
+    const size_t len = g_prefs.getBytesLength(NVS_KEY);
+    if (len > 0 && len < CFG_JSON_CAP) {  // NOT sizeof json - that is a pointer
+      g_prefs.getBytes(NVS_KEY, json, len);
+      json[len] = '\0';
+    } else {
+      g_prefs.getString(NVS_KEY, json, CFG_JSON_CAP);
+      from_string_form = json[0] != '\0';
+    }
     g_prefs.end();
+  }
+
+  bool loaded = false;
+  {
     const CfgError e = cfg_parse(json, &g_cfg, theme_count());
     if (e == CfgError::Ok) {
       loaded = true;
@@ -116,12 +156,28 @@ void config_begin() {
   }
   if (!loaded) seed_from_compiled_defaults();
 
+  // Rewrite anything that came from the old string form - whether it was a v1
+  // document lifted into a group, or a v2 one an older build had stored as a
+  // string - so the next boot takes the blob path and the 4000-byte ceiling
+  // stops applying.
+  if (loaded && from_string_form) {
+    if (cfg_serialize(g_cfg, json, CFG_JSON_CAP) != 0 && g_prefs.begin(NVS_NS, false)) {
+      g_prefs.remove(NVS_KEY);  // drop the string-typed value before writing a blob
+      g_prefs.end();
+      store_json(json);
+      Serial.println("config: migrated to the grouped schema");
+    }
+  }
+
   g_theme = g_cfg.theme;
   g_n_pub = cfg_publish(g_cfg, g_pub);
   {  // mirror cfg_publish's compaction to remember where each published watch came from
     uint8_t n = 0;
-    for (uint8_t i = 0; i < g_cfg.n_watches && n < MAX_WATCHES; i++) {
-      if (g_cfg.watches[i].enabled) g_pub_src[n++] = i;
+    if (g_cfg.active_group < g_cfg.n_groups) {
+      const CfgGroup& g = g_cfg.groups[g_cfg.active_group];
+      for (uint8_t i = 0; i < g.n_watches && n < MAX_WATCHES; i++) {
+        if (g.watches[i].enabled) g_pub_src[n++] = i;
+      }
     }
   }
   for (uint8_t i = 0; i < MAX_WATCHES; i++) g_visible[i] = true;  // everything published is shown
@@ -194,13 +250,12 @@ bool config_set_lane_visible(uint8_t index, bool visible) {
   // touched here, which is what makes this safe to do while both are running.
   Config snapshot = g_cfg;
   snapshot.theme = g_theme;
-  if (g_pub_src[index] < snapshot.n_watches) snapshot.watches[g_pub_src[index]].enabled = visible;
-  char json[CFG_JSON_CAP];
-  if (cfg_serialize(snapshot, json, sizeof json) == 0) return true;  // live change stands
-  if (g_prefs.begin(NVS_NS, false)) {
-    g_prefs.putString(NVS_KEY, json);
-    g_prefs.end();
+  if (snapshot.active_group < snapshot.n_groups) {
+    CfgGroup& g = snapshot.groups[snapshot.active_group];
+    if (g_pub_src[index] < g.n_watches) g.watches[g_pub_src[index]].enabled = visible;
   }
+  if (cfg_serialize(snapshot, g_json_ui, CFG_JSON_CAP) == 0) return true;  // live change stands
+  store_json(g_json_ui);
   return true;
 }
 
@@ -217,12 +272,8 @@ void config_set_theme(uint8_t t) {
   if (t >= theme_count()) return;
   g_theme = t;   // live, atomic
   g_cfg.theme = t;
-  char json[CFG_JSON_CAP];
-  if (cfg_serialize(g_cfg, json, sizeof json) == 0) return;
-  if (g_prefs.begin(NVS_NS, false)) {
-    g_prefs.putString(NVS_KEY, json);
-    g_prefs.end();
-  }
+  if (cfg_serialize(g_cfg, g_json_ui, CFG_JSON_CAP) == 0) return;
+  store_json(g_json_ui);
 }
 
 CfgError config_save_json(const char* json) {
@@ -232,12 +283,8 @@ CfgError config_save_json(const char* json) {
 
   // Re-serialise rather than storing the caller's bytes: this normalises the
   // document and guarantees what lands in NVS is something cfg_parse accepts.
-  char clean[CFG_JSON_CAP];
-  if (cfg_serialize(scratch, clean, sizeof clean) == 0) return CfgError::FieldTooLong;
-
-  if (!g_prefs.begin(NVS_NS, false)) return CfgError::BadJson;
-  g_prefs.putString(NVS_KEY, clean);
-  g_prefs.end();
+  if (cfg_serialize(scratch, g_json_portal, CFG_JSON_CAP) == 0) return CfgError::FieldTooLong;
+  store_json(g_json_portal);
   return CfgError::Ok;  // caller reboots; g_cfg deliberately untouched
 }
 
