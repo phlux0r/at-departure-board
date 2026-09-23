@@ -359,6 +359,111 @@ On hardware the board now logs, for stop 122:
 dirs 122: O-W-201/0 no  O-W-201/1 no  E-W-201/0 no  E-W-201/1 yes -> ok
 ```
 
+## Vehicle occupancy (the AT Mobile "people" icon) — probed 2026-09-22
+
+AT Mobile shows how full a bus or train is, as four people icons under Live
+Departures. That is **vehicle** occupancy, not station crowding, and it is
+GTFS-Realtime's `OccupancyStatus`.
+
+It is real, and it is **only** in the combined feed. Probed unfiltered with
+`tools/probe_occupancy.py`:
+
+| Path | Result |
+|---|---|
+| `/realtime/legacy/tripupdates` | 200, 1,126,537 b, 2,252 entities, **no occupancy anywhere** |
+| `/realtime/legacy/` | 200, 1,857,288 b, 4,128 entities, **925 with `occupancy_status`** |
+| `/realtime/legacy/vehiclepositions` | **404** |
+| `/realtime/legacy/vehicle-positions` | **404** |
+
+So there is no dedicated vehicle-positions path to fetch cheaply — the
+combined feed is the only way to get it, and it is 1.65x the bytes of
+`/tripupdates` unfiltered. The combined feed's 4,128 entities are 2,252
+`trip_update`, 1,737 `vehicle` and 139 `alert`.
+
+### Coverage is about half, and skewed quiet
+
+Of 1,737 vehicle entities, **925 (53%) carried `occupancy_status`**; 198 of
+344 routes (58%) had it on at least one vehicle.
+
+| Value | | Count | Share of reported |
+|---|---|---|---|
+| 0 | `EMPTY` | 409 | 44% |
+| 1 | `MANY_SEATS_AVAILABLE` | 416 | 45% |
+| 2 | `FEW_SEATS_AVAILABLE` | 86 | 9% |
+| 3 | `STANDING_ROOM_ONLY` | 12 | 1% |
+| 5 | `FULL` | 2 | 0.2% |
+
+`4` (`CRUSHED_STANDING_ROOM_ONLY`), `6` (`NOT_ACCEPTING_PASSENGERS`), `7` and
+`8` did not appear at all. A second run half an hour later agreed closely —
+52% of vehicles, 58% of routes — so these proportions are stable, not a
+one-off.
+
+Two things follow for anything built on this:
+
+- **Half the vehicles have no value**, so a display has to have an honest
+  "not reported" state. Showing "empty" for a missing value would be a lie of
+  exactly the kind this board is built not to tell.
+- **This sample is an evening one** and 89% of reported values are `EMPTY` or
+  `MANY_SEATS_AVAILABLE`. The interesting end of the scale is barely
+  exercised here; a peak-hour probe would say more about whether `3` and `5`
+  are common enough to be worth drawing.
+
+### Per-route coverage — measure it, and mind the denominator
+
+The network figure hides a lot, so check the routes you actually watch with
+`--route` rather than trusting the headline. On the corrected denominator the
+routes this board watches are at or near **total** coverage, not half:
+
+| Route | Vehicles with occupancy |
+|---|---|
+| `931` | 4 / 4 |
+| `97R` | 3 / 3 |
+| `EAST` (`E-W-201`) | 12 / 13 |
+| `ONE` (`O-W-201`) | 2 / 2 |
+| `STH` (`S-C-201`) | 14 / 14 |
+
+The gap between that and the 52% network figure is **vehicles that are not on
+a trip** — between runs, deadheading, parked up. They have no `trip.route_id`
+and report no occupancy, and the board never shows them, so counting them
+against coverage answers a question nobody asked. The probe now splits the
+two:
+
+```
+  vehicles ON a trip:  N/M report occupancy (X%)  <- what the board would see
+  vehicles not on a trip: N/M (between runs; the board never shows these)
+```
+
+Use the first line. The 52% headline above is the whole vehicle population
+and is the wrong number for deciding whether to build this.
+
+**A correction worth keeping**, because the same mistake is easy to repeat:
+the first version of `probe_occupancy.py` counted *every* entity carrying
+`trip.route_id` into each route's denominator. A `trip_update` has one of
+those too, and only a `vehicle` entity can ever carry occupancy — so each
+route's coverage came out diluted by however many trip updates it had,
+making rail in particular look far worse than it is (a line showed as "12 of
+142", which should have been a tell: Auckland does not run 142 trains on one
+line). The denominator is vehicle entities only. Any figure recorded here
+from before 2026-09-22 with an implausibly large denominator came from the
+broken version.
+
+The headline numbers above — 52-53% of vehicle entities, 58% of routes — were
+computed separately and are unaffected.
+
+### It has to be the filtered combined feed
+
+**Never fetch the combined feed unfiltered**: 1.86 MB, against the 766 KB
+that already made `?tripid=` load-bearing for the GTFS side. Filtered, the
+figures in "Realtime" above stand — 5,836 bytes against 3,202 for six trips,
+so occupancy roughly doubles the realtime response.
+
+Affordable on the S3 (2 MB contiguous block, 144 KB lowest heap), and a
+harder ask on the classic ESP32, whose largest block is 114 KB. It also means
+the ArduinoJson filter has to start accepting `vehicle` entities, which is
+what "Realtime" above rejects them for.
+
+Re-run any time with `python tools/probe_occupancy.py`.
+
 ## Realtime only reports trips already in progress
 
 Asking `/realtime/legacy/tripupdates?tripid=...` about trips that haven't
