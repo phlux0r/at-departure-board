@@ -411,7 +411,30 @@ Two things follow for anything built on this:
 ### Per-route coverage — measure it, and mind the denominator
 
 The network figure hides a lot, so check the routes you actually watch with
-`--route` rather than trusting the headline.
+`--route` rather than trusting the headline. On the corrected denominator the
+routes this board watches are at or near **total** coverage, not half:
+
+| Route | Vehicles with occupancy |
+|---|---|
+| `931` | 4 / 4 |
+| `97R` | 3 / 3 |
+| `EAST` (`E-W-201`) | 12 / 13 |
+| `ONE` (`O-W-201`) | 2 / 2 |
+| `STH` (`S-C-201`) | 14 / 14 |
+
+The gap between that and the 52% network figure is **vehicles that are not on
+a trip** — between runs, deadheading, parked up. They have no `trip.route_id`
+and report no occupancy, and the board never shows them, so counting them
+against coverage answers a question nobody asked. The probe now splits the
+two:
+
+```
+  vehicles ON a trip:  N/M report occupancy (X%)  <- what the board would see
+  vehicles not on a trip: N/M (between runs; the board never shows these)
+```
+
+Use the first line. The 52% headline above is the whole vehicle population
+and is the wrong number for deciding whether to build this.
 
 **A correction worth keeping**, because the same mistake is easy to repeat:
 the first version of `probe_occupancy.py` counted *every* entity carrying

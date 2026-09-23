@@ -126,7 +126,7 @@ def summarise(doc, body):
             if isinstance(e, dict) and e.get(k) is not None:
                 kinds[k] = kinds.get(k, 0) + 1
 
-    occ_fields, values, by_route = {}, {}, {}
+    occ_fields, values, by_route, on_trip = {}, {}, {}, {}
     for e in ents:
         found = None
         for p, v in walk(e):
@@ -147,9 +147,21 @@ def summarise(doc, body):
             if p.endswith("trip.route_id"):
                 route = v
                 break
-        if route is not None:
-            seen, total = by_route.get(route, (0, 0))
-            by_route[route] = (seen + (1 if found is not None else 0), total + 1)
+
+        # Split on whether the vehicle is on a trip at all. A bus between runs
+        # has no route and reports no occupancy, and counting those against
+        # coverage answers a question nobody asked: the board only ever shows
+        # vehicles that are serving a trip it is watching.
+        if route is None:
+            on_trip["off"] = on_trip.get("off", 0) + 1
+            if found is not None:
+                on_trip["off_with_occ"] = on_trip.get("off_with_occ", 0) + 1
+            continue
+        on_trip["on"] = on_trip.get("on", 0) + 1
+        if found is not None:
+            on_trip["on_with_occ"] = on_trip.get("on_with_occ", 0) + 1
+        seen, total = by_route.get(route, (0, 0))
+        by_route[route] = (seen + (1 if found is not None else 0), total + 1)
 
     return {
         "bytes": len(body),
@@ -158,6 +170,7 @@ def summarise(doc, body):
         "occupancy_fields": occ_fields,
         "values": values,
         "by_route": by_route,
+        "on_trip": on_trip,
     }
 
 
@@ -208,6 +221,15 @@ def main():
                 except ValueError:
                     name = "a string, not the spec's integer enum"
                 print(f"    {raw:<4} x{n:<5} {name}")
+            t = s["on_trip"]
+            on, on_occ = t.get("on", 0), t.get("on_with_occ", 0)
+            off, off_occ = t.get("off", 0), t.get("off_with_occ", 0)
+            if on:
+                print(f"  vehicles ON a trip:  {on_occ}/{on} report occupancy "
+                      f"({on_occ / on * 100:.0f}%)  <- what the board would see")
+            if off:
+                print(f"  vehicles not on a trip: {off_occ}/{off} "
+                      "(between runs; the board never shows these)")
             with_occ = sum(1 for seen, _ in s["by_route"].values() if seen)
             print(f"  routes with occupancy: {with_occ} of {len(s['by_route'])}"
                   "   (denominators below are VEHICLE entities only)")
