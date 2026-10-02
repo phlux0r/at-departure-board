@@ -6,3 +6,4 @@
 // that flag is undefined, rgb_led_off() is a no-op, so boards without the
 // LED - and the classic ESP32 build - are unaffected.
 void rgb_led_off();
+

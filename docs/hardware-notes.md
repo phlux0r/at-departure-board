@@ -382,7 +382,8 @@ stays lit until something drives it — the first S3 unit this project was
 built against did not have one, so this wasn't in the wiring table above.
 
 `src/rgb_led.cpp` turns it off in `setup()`, as early as possible, using the
-Arduino-ESP32 core's built-in `rgbLedWrite()` rather than pulling in a
+Arduino-ESP32 core's built-in `neopixelWrite()` (core 3.x renames it
+`rgbLedWrite()`; this project pins core 2.0.17) rather than pulling in a
 NeoPixel library for a single off-write. The pin is a build flag
 (`RGB_LED_PIN=48`, the common pin for this LED on SuperMini boards), set only
 in the `esp32s3` env; when the flag is undefined `rgb_led_off()` is a no-op,
