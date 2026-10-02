@@ -374,6 +374,25 @@ and `board_build.arduino.memory_type = qio_qspi` assume. (The vendor listing's
 C3/RISC-V description, mentioned as a risk when this env was first added, was
 simply wrong.)
 
+### A second unit has an onboard addressable RGB LED
+
+A different SuperMini unit (same `esp32s3` env, confirmed 2026-10-02) carries
+a single onboard WS2812-style addressable RGB LED that lights up on boot and
+stays lit until something drives it — the first S3 unit this project was
+built against did not have one, so this wasn't in the wiring table above.
+
+`src/rgb_led.cpp` turns it off in `setup()`, as early as possible, using the
+Arduino-ESP32 core's built-in `rgbLedWrite()` rather than pulling in a
+NeoPixel library for a single off-write. The pin is a build flag
+(`RGB_LED_PIN=48`, the common pin for this LED on SuperMini boards), set only
+in the `esp32s3` env; when the flag is undefined `rgb_led_off()` is a no-op,
+so the classic ESP32 build is untouched and a unit without the LED just gets
+one harmless write to an otherwise-unused pin.
+
+If a future unit's LED turns out to be on a different pin, override
+`RGB_LED_PIN` for that build rather than guessing a pin that fits every
+SuperMini — this is sourcing-run variation, same as the panel controller.
+
 ### Two bugs found bringing the display up
 
 1. **Boot panic** — Guru Meditation, `StoreProhibited`, backtrace in

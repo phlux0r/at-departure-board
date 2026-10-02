@@ -8,6 +8,7 @@
 
 #include "backlight.h"
 #include "reorder_ui.h"
+#include "rgb_led.h"
 #include "settings_ui.h"
 #include "touch.h"
 #include "ui.h"
@@ -69,6 +70,7 @@ Board board_now(uint32_t, int64_t now) {
 
 void setup() {
   Serial.begin(115200);
+  rgb_led_off();  // kill the onboard LED before anything else runs
   backlight_begin();
   tft.init();
   tft.setRotation(1);
